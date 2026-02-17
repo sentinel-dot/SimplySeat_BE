@@ -40,9 +40,11 @@ Railway nutzt **keine** `.env`-Datei. Alle Variablen werden im **Variables**-Tab
 ## Teil 4: Datenbank mit Backend verknüpfen
 
 12. **MySQL an Backend anbinden:** Im Backend-Service: **"Variables"** → **"+ New Variable"** → **"Add Reference"** (oder "Add Variable").
-13. **Referenz auf MySQL:** Wähle den MySQL-Service und die Variable **`MYSQL_URL`** (oder **`MYSQL_PUBLIC_URL`**). Railway setzt die Variable im Backend mit dem Wert aus der DB – URL musst du nicht kopieren und bleibt aktuell.
+13. **Referenz auf MySQL (empfohlen für gleiches Projekt):** Wähle den MySQL-Service und die Variable **`MYSQL_PRIVATE_URL`** (oder **`MYSQL_URL`**). Das Backend nutzt in Production automatisch **`MYSQL_PRIVATE_URL`** zuerst – Verbindung bleibt im internen Netz, kein Public-Proxy nötig.
+    - Alternativ Referenz auf **`MYSQL_URL`** oder **`MYSQL_PUBLIC_URL`** (funktioniert ebenfalls).
+    - Oder einzelne Referenzen: **`MYSQLHOST`**, **`MYSQLUSER`**, **`MYSQLPASSWORD`**, **`MYSQLDATABASE`**, **`MYSQLPORT`** – das Backend unterstützt diese Railway-Variablen.
 
-Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_URL`** oder **`MYSQL_PUBLIC_URL`** kopieren und im Backend-Service als **`MYSQL_URL`** einfügen.
+Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_PRIVATE_URL`** (oder **`MYSQL_URL`**) kopieren und im Backend-Service als **`MYSQL_PRIVATE_URL`** bzw. **`MYSQL_URL`** einfügen.
 
 ---
 
@@ -55,7 +57,7 @@ Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_URL`** oder
 | `NODE_ENV`    | `production` (Railway setzt das oft automatisch.) |
 | `PORT`        | Wird von Railway gesetzt – **nicht** manuell überschreiben. |
 | `JWT_SECRET`  | Mind. 32 Zeichen. Z. B. erzeugen: `openssl rand -base64 32` |
-| **DB**        | Entweder `MYSQL_URL` oder `MYSQL_PUBLIC_URL` per Referenz (siehe Schritt 12–13) **oder** manuell die URL aus dem MySQL-Service kopieren. |
+| **DB**        | Am besten **`MYSQL_PRIVATE_URL`** per Referenz (MySQL-Service → Variable `MYSQL_PRIVATE_URL`). Sonst `MYSQL_URL` oder `MYSQL_PUBLIC_URL` (siehe Schritt 12–13). Ohne URL: Einzelreferenzen `MYSQLHOST`, `MYSQLUSER`, `MYSQLPASSWORD`, `MYSQLDATABASE`, `MYSQLPORT`. |
 
 ---
 
@@ -87,7 +89,7 @@ Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_URL`** oder
 - [ ] Railway-Projekt erstellt
 - [ ] MySQL-Datenbank als Service hinzugefügt
 - [ ] Backend-Service aus GitHub-Repo erstellt
-- [ ] `MYSQL_URL` oder `MYSQL_PUBLIC_URL` im Backend gesetzt (Referenz oder Kopie aus MySQL-Service)
+- [ ] `MYSQL_PRIVATE_URL` oder `MYSQL_URL` im Backend gesetzt (Referenz oder Kopie aus MySQL-Service)
 - [ ] `NODE_ENV=production`
 - [ ] `JWT_SECRET` mit mind. 32 Zeichen
 - [ ] `FRONTEND_URL` (oder `FRONTEND_URLS`) für CORS

@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 
 import { createLogger } from './config/utils/logger';
-import { testConnection, setupGracefulShutdown } from './config/database';
+import { testConnection, setupGracefulShutdown, ensureSchemaAndSeedIfEmpty } from './config/database';
 import { requestLogger } from './middleware/requestLogger.middleware';
 import { errorLogger } from './middleware/errorLogger.middleware';
 
@@ -173,11 +173,13 @@ const startServer = async() => {
         assertSecureCustomerJwtSecret();
         // Teste Datenbankverbindung VOR dem Start
         const dbConnected = await testConnection();
-        
+
         if (!dbConnected) {
             logger.error('Failed to connect to database. Exiting...');
             process.exit(1);
         }
+
+        await ensureSchemaAndSeedIfEmpty();
 
         // Setup Graceful Shutdown Handler
         setupGracefulShutdown();
