@@ -150,11 +150,18 @@ function getTransport(): Transporter | null {
   }
   const port = parseInt(process.env.SMTP_PORT ?? '587', 10);
   const secure = process.env.SMTP_SECURE === 'true';
+  // Port 587 = STARTTLS (secure: false, requireTLS: true). Port 465 = implicit TLS (secure: true).
+  // Cloud (Railway/Vercel) often blocks port 25; use 587 or 465. Increase timeouts if provider is slow.
+  const connectionTimeout = parseInt(process.env.SMTP_CONNECTION_TIMEOUT ?? '30000', 10);
+  const greetingTimeout = parseInt(process.env.SMTP_GREETING_TIMEOUT ?? '15000', 10);
   return nodemailer.createTransport({
     host,
     port,
     secure,
     auth: { user, pass },
+    requireTLS: port === 587 && !secure,
+    connectionTimeout,
+    greetingTimeout,
   });
 }
 

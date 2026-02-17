@@ -70,7 +70,8 @@ Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_PRIVATE_URL
 | `FRONTEND_URL`    | Eine erlaubte Origin für CORS, z. B. `https://deine-app.vercel.app` |
 | `FRONTEND_URLS`   | Mehrere Origins, komma-getrennt (z. B. Production + Vercel-Preview-URLs) |
 | `CUSTOMER_JWT_SECRET` | Optional; für Kunden-Login, sonst wird `JWT_SECRET` genutzt. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | E-Mail (z. B. Brevo). Wenn nicht gesetzt: E-Mails nur im Log. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | E-Mail (z. B. Brevo, Resend, SendGrid). Wenn nicht gesetzt: E-Mails nur im Log. |
+| `SMTP_SECURE`     | `true` für Port 465 (SSL), sonst weglassen bzw. `false` für Port 587 (STARTTLS). |
 | `MAIL_FROM`       | Absender in E-Mails, z. B. `SimplySeat<noreply@simplyseat.de>` |
 | `PUBLIC_APP_URL`  | Basis-URL für Links in E-Mails (z. B. Frontend-URL). |
 
@@ -135,6 +136,30 @@ Alternativ: Im Backend-Service direkt den Tab **„Logs“** (falls vorhanden) �
 - **Per CLI:** `railway redeploy` (baut den letzten Deploy neu; für neuen Code zuerst pushen, dann im Dashboard „Deploy“ nutzen oder erneut pushen, damit der neueste Commit gezogen wird).
 
 **Branch prüfen:** Unter **Settings** des Backend-Services siehst du, welcher Branch verwendet wird. Nur Pushes auf diesen Branch lösen Auto-Deploys aus.
+
+---
+
+## E-Mail „Connection timeout“ (SMTP auf Railway)
+
+Wenn E-Mails lokal funktionieren, auf Railway aber **„Connection timeout“** auftritt, liegt es fast immer an Netz/Konfiguration:
+
+1. **Port 25 vermeiden**  
+   Viele Cloud-Anbieter (inkl. Railway) blockieren ausgehende Verbindungen auf Port 25. Nutze **Port 587** (STARTTLS) oder **Port 465** (SSL):
+   - `SMTP_PORT=587` und `SMTP_SECURE` nicht setzen bzw. `false`
+   - oder `SMTP_PORT=465` und `SMTP_SECURE=true`
+
+2. **Provider aus der Cloud erlauben**  
+   Manche Anbieter (z. B. privates Büro-Mail oder veraltete Hosts) lassen nur Verbindungen von bestimmten IPs zu. Nutze einen Dienst, der explizit „von Servern/Cloud“ erlaubt, z. B.:
+   - **Brevo (Sendinblue):** `SMTP_HOST=smtp-relay.brevo.com`, Port 587 oder 465, User = E-Mail, Pass = SMTP-Key aus dem Brevo-Dashboard
+   - **Resend, SendGrid, Mailgun:** jeweilige SMTP-Host/Port/User/Pass aus der Doku (meist 587 oder 465)
+
+3. **Variablen auf Railway prüfen**  
+   Im Backend-Service unter **Variables** prüfen: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` korrekt und ohne Tippfehler (z. B. Host ohne `https://`, nur Hostname).
+
+4. **Optional: längere Timeouts**  
+   Falls der Provider langsam antwortet: `SMTP_CONNECTION_TIMEOUT=60000` und ggf. `SMTP_GREETING_TIMEOUT=20000` setzen (Millisekunden).
+
+Wenn SMTP nicht konfiguriert ist, werden E-Mails nur geloggt und nicht versendet – dann erscheint **kein** „Connection timeout“.
 
 ---
 

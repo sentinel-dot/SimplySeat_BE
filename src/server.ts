@@ -28,6 +28,9 @@ import { startReminderCron } from './jobs/reminder.job';
 dotenv.config();
 
 const app = express();
+// Behind Railway/reverse proxy: trust X-Forwarded-For so rate-limit and logs see real client IP
+app.set('trust proxy', 1);
+
 const PORT: number = parseInt(String(process.env.PORT || 5001), 10) || 5001;
 const logger = createLogger('backend.server');
 
