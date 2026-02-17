@@ -140,9 +140,12 @@ function emailLayout(opts: {
 </html>`;
 }
 
+/** Logged on first use and on send failure (no secrets) so Railway logs show actual SMTP config. */
+let smtpConfigForLog: { host: string; port: number; secure: boolean } | null = null;
+
 function getTransport(): Transporter | null {
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
+  const host = (process.env.SMTP_HOST ?? '').trim();
+  const user = (process.env.SMTP_USER ?? '').trim();
   const pass = process.env.SMTP_PASS;
   if (!host || !user || !pass) {
     logger.info('SMTP not configured (SMTP_HOST/USER/PASS). Emails will be logged only.');
@@ -154,6 +157,17 @@ function getTransport(): Transporter | null {
   // Cloud (Railway/Vercel) often blocks port 25; use 587 or 465. Increase timeouts if provider is slow.
   const connectionTimeout = parseInt(process.env.SMTP_CONNECTION_TIMEOUT ?? '30000', 10);
   const greetingTimeout = parseInt(process.env.SMTP_GREETING_TIMEOUT ?? '15000', 10);
+
+  smtpConfigForLog = { host, port, secure };
+  logger.info('SMTP transport created', {
+    host,
+    port,
+    secure,
+    connectionTimeout,
+    greetingTimeout,
+    userHint: user ? `${user.slice(0, 4)}***` : '(none)',
+  });
+
   return nodemailer.createTransport({
     host,
     port,
@@ -486,6 +500,13 @@ async function sendMail(opts: SendMailOptions): Promise<boolean> {
     return true;
   } catch (err) {
     logger.error(`Failed to send email (${opts.type}, booking ${opts.bookingId})`, err);
+    if (smtpConfigForLog) {
+      logger.error('SMTP connection failed – config used', {
+        ...smtpConfigForLog,
+        to: opts.to,
+        hint: 'Check: host/port correct, no quotes in Railway vars, Brevo allows cloud IPs (or disable IP restriction).',
+      });
+    }
     return false;
   }
 }
@@ -516,6 +537,13 @@ async function sendCustomerMail(to: string, subject: string, html: string, text:
     return true;
   } catch (err) {
     logger.error('Failed to send customer email', err);
+    if (smtpConfigForLog) {
+      logger.error('SMTP connection failed – config used', {
+        ...smtpConfigForLog,
+        to,
+        hint: 'Check: host/port correct, no quotes in Railway vars, Brevo allows cloud IPs (or disable IP restriction).',
+      });
+    }
     return false;
   }
 }
