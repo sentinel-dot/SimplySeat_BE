@@ -6,7 +6,7 @@ dotenv.config({ path: '.env' });
 
 const logger = createLogger('database');
 
-/** Parst mysql://user:password@host:port/database (z. B. Railway MYSQL_URL / MYSQL_PRIVATE_URL). */
+/** Parst mysql://user:password@host:port/database (z. B. Railway MYSQL_URL / MYSQL_PUBLIC_URL). */
 function parseMysqlUrl(url: string): { host: string; port: number; user: string; password: string; database: string } | null {
     try {
         const u = new URL(url);
@@ -26,7 +26,7 @@ function parseMysqlUrl(url: string): { host: string; port: number; user: string;
     }
 }
 
-const mysqlUrl = process.env.MYSQL_PRIVATE_URL || process.env.MYSQL_URL || process.env.DATABASE_URL;
+const mysqlUrl = process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_PRIVATE_URL || process.env.DATABASE_URL;
 const fromUrl = mysqlUrl ? parseMysqlUrl(mysqlUrl) : null;
 
 // Railway (und andere Cloud-Hosts) erwarten TCP (Host + Port), kein Unix-Socket.

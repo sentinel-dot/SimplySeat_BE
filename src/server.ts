@@ -37,9 +37,9 @@ function getMissingProductionEnvVars(): string[] {
     const missing: string[] = [];
     const secret = (process.env.JWT_SECRET ?? '').trim();
     if (secret.length < 32) missing.push('JWT_SECRET (min. 32 chars, e.g. openssl rand -base64 32)');
-    const dbUrl = process.env.MYSQL_PRIVATE_URL || process.env.MYSQL_URL || process.env.DATABASE_URL;
+    const dbUrl = process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_PRIVATE_URL || process.env.DATABASE_URL;
     const hasDbVars = process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME;
-    if (!dbUrl && !hasDbVars) missing.push('Database: set MYSQL_PRIVATE_URL (or MYSQL_URL) or DB_HOST, DB_USER, DB_PASSWORD, DB_NAME');
+    if (!dbUrl && !hasDbVars) missing.push('Database: set MYSQL_URL (or MYSQL_PUBLIC_URL) or DB_HOST, DB_USER, DB_PASSWORD, DB_NAME');
     return missing;
 }
 
