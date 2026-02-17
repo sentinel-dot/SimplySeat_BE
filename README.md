@@ -1,1 +1,0 @@
-# SimplySeat_BE
