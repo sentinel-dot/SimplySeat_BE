@@ -8,7 +8,7 @@ import { authenticateToken, requireVenueAccess } from '../middleware/auth.middle
 const router = express.Router();
 const logger = createLogger('venue.routes');
 
-const VALID_VENUE_TYPES = ['restaurant', 'hair_salon', 'beauty_salon', 'massage', 'other'] as const;
+const VALID_VENUE_TYPES = ['restaurant', 'hair_salon', 'beauty_salon', 'cafe', 'bar', 'spa', 'other'] as const;
 
 /** Zeitfenster ±1h um gewünschte Uhrzeit (HH:MM) für Suche "ca. 19:00" */
 function timeWindowAround(timeStr: string): { timeWindowStart: string; timeWindowEnd: string } | undefined {

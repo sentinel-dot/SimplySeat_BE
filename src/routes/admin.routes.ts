@@ -55,7 +55,7 @@ router.post('/venues', async (req: Request, res: Response) => {
         res.status(400).json({ success: false, message: 'Name, Typ und E-Mail sind erforderlich' });
         return;
     }
-    const validTypes = ['restaurant', 'hair_salon', 'beauty_salon', 'massage', 'other'];
+    const validTypes = ['restaurant', 'hair_salon', 'beauty_salon', 'cafe', 'bar', 'spa', 'other'];
     if (!validTypes.includes(type)) {
         res.status(400).json({ success: false, message: 'Ungültiger Venue-Typ' });
         return;
@@ -80,7 +80,7 @@ router.patch('/venues/:id', async (req: Request, res: Response) => {
     }
     const body = req.body;
     if (body.type !== undefined) {
-        const validTypes = ['restaurant', 'hair_salon', 'beauty_salon', 'massage', 'other'];
+        const validTypes = ['restaurant', 'hair_salon', 'beauty_salon', 'cafe', 'bar', 'spa', 'other'];
         if (!validTypes.includes(body.type)) {
             res.status(400).json({ success: false, message: 'Ungültiger Venue-Typ' });
             return;

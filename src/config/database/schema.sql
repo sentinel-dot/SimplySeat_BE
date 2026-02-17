@@ -10,7 +10,7 @@ USE simplyseatdb;
 CREATE TABLE venues (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    type ENUM('restaurant', 'hair_salon', 'beauty_salon', 'massage', 'other') NOT NULL,
+    type ENUM('restaurant', 'hair_salon', 'beauty_salon', 'cafe', 'bar', 'spa', 'other') NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(20),
     address VARCHAR(255),

@@ -1,8 +1,7 @@
 /**
  * E-Mail-Service für Buchungs-Benachrichtigungen
- * - Wenn BREVO_API_KEY gesetzt: Versand über Brevo HTTP-API (HTTPS, funktioniert zuverlässig auf Railway/Cloud).
- * - Sonst Nodemailer mit SMTP (z. B. Resend, SendGrid, Brevo, Mailgun).
- * - Ohne beides: E-Mails nur im Log (z. B. lokale Entwicklung).
+ * - Production: Brevo HTTP-API (BREVO_API_KEY), wenn gesetzt – sonst SMTP.
+ * - Development: nie Brevo API – nur SMTP (SMTP_HOST/USER/PASS) oder, wenn nicht konfiguriert, E-Mails nur im Log.
  */
 
 import nodemailer, { Transporter } from 'nodemailer';
@@ -233,7 +232,9 @@ async function sendViaBrevoApi(to: string, subject: string, html: string, text: 
   }
 }
 
+/** Production: Brevo API. Development: nie Brevo API (SMTP oder nur Log). */
 function useBrevoApi(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
   return !!((process.env.BREVO_API_KEY ?? '').trim());
 }
 

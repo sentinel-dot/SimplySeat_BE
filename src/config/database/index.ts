@@ -28,11 +28,11 @@ function parseMysqlUrl(url: string): { host: string; port: number; user: string;
     }
 }
 
-// Railway: Im gleichen Projekt MYSQL_PRIVATE_URL bevorzugen (internes Netz). Sonst MYSQL_URL / MYSQL_PUBLIC_URL.
+// Development: nur lokale MariaDB (DB_HOST, DB_USER, …). Production: nur MYSQL_URL (z. B. Railway).
 const isProduction = process.env.NODE_ENV === 'production';
-const mysqlUrl = isProduction && process.env.MYSQL_PRIVATE_URL
-    ? process.env.MYSQL_PRIVATE_URL
-    : (process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_PRIVATE_URL || process.env.DATABASE_URL);
+const mysqlUrl = isProduction
+    ? (process.env.MYSQL_PRIVATE_URL || process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || process.env.DATABASE_URL)
+    : null;
 const fromUrl = mysqlUrl ? parseMysqlUrl(mysqlUrl) : null;
 
 // Railway nutzt auch einzelne Variablen: MYSQLHOST, MYSQLUSER, MYSQLPASSWORD, MYSQLDATABASE, MYSQLPORT
@@ -78,8 +78,8 @@ if (fromUrl) {
 
 // Log welcher DB-Quelle genutzt wird (ohne Passwort), hilft bei Railway-Debugging
 const configSource = fromUrl
-    ? (isProduction && process.env.MYSQL_PRIVATE_URL ? 'MYSQL_PRIVATE_URL' : 'MYSQL_URL/MYSQL_PUBLIC_URL')
-    : (dbHost ? 'DB_HOST/MYSQLHOST' : 'socket');
+    ? 'MYSQL_URL (MYSQL_PRIVATE_URL / MYSQL_PUBLIC_URL)'
+    : (dbHost ? 'DB_HOST (lokal)' : 'socket');
 logger.info(`Database config: ${configSource} (host: ${poolConfig.host ?? 'socket'}, port: ${poolConfig.port ?? 'n/a'})`);
 
 const pool = mariadb.createPool(poolConfig);
@@ -161,6 +161,48 @@ export async function ensureSchemaAndSeedIfEmpty(): Promise<void> {
         await runSeed(conn);
     } catch (error) {
         logger.error('Failed to apply schema/seed', error);
+        throw error;
+    } finally {
+        if (conn) conn.release();
+    }
+}
+
+/** Tabellen in Abhängigkeitsreihenfolge (Kind zuerst), für DROP. */
+const TABLES_TO_DROP = [
+    'booking_audit_log',
+    'reviews',
+    'loyalty_transactions',
+    'customer_favorites',
+    'customer_preferences',
+    'bookings',
+    'availability_rules',
+    'staff_services',
+    'services',
+    'staff_members',
+    'users',
+    'venues',
+    'customers',
+    'loyalty_config',
+] as const;
+
+/**
+ * Development: Alle Tabellen droppen, dann Schema und Seed neu anwenden.
+ * Bei jedem Serverstart in NODE_ENV=development wird die DB so neu aufgesetzt.
+ */
+export async function resetSchemaAndSeedForDevelopment(): Promise<void> {
+    let conn: PoolConnection | null = null;
+    try {
+        conn = await pool.getConnection();
+        await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+        for (const table of TABLES_TO_DROP) {
+            await conn.query(`DROP TABLE IF EXISTS \`${table}\``);
+        }
+        await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+        logger.info('Development: tables dropped; applying schema and seed...');
+        await runSchema(conn);
+        await runSeed(conn);
+    } catch (error) {
+        logger.error('Failed to reset schema/seed for development', error);
         throw error;
     } finally {
         if (conn) conn.release();

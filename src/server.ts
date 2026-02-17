@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 
 import { createLogger } from './config/utils/logger';
-import { testConnection, setupGracefulShutdown, ensureSchemaAndSeedIfEmpty } from './config/database';
+import { testConnection, setupGracefulShutdown, ensureSchemaAndSeedIfEmpty, resetSchemaAndSeedForDevelopment } from './config/database';
 import { requestLogger } from './middleware/requestLogger.middleware';
 import { errorLogger } from './middleware/errorLogger.middleware';
 
@@ -41,8 +41,7 @@ function getMissingProductionEnvVars(): string[] {
     const secret = (process.env.JWT_SECRET ?? '').trim();
     if (secret.length < 32) missing.push('JWT_SECRET (min. 32 chars, e.g. openssl rand -base64 32)');
     const dbUrl = process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_PRIVATE_URL || process.env.DATABASE_URL;
-    const hasDbVars = process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME;
-    if (!dbUrl && !hasDbVars) missing.push('Database: set MYSQL_URL (or MYSQL_PUBLIC_URL) or DB_HOST, DB_USER, DB_PASSWORD, DB_NAME');
+    if (!dbUrl) missing.push('Database: set MYSQL_URL (or MYSQL_PRIVATE_URL / MYSQL_PUBLIC_URL)');
     return missing;
 }
 
@@ -192,7 +191,11 @@ const startServer = async() => {
             process.exit(1);
         }
 
-        await ensureSchemaAndSeedIfEmpty();
+        if (process.env.NODE_ENV === 'development') {
+            await resetSchemaAndSeedForDevelopment();
+        } else {
+            await ensureSchemaAndSeedIfEmpty();
+        }
 
         // Setup Graceful Shutdown Handler
         setupGracefulShutdown();
