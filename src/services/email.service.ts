@@ -118,7 +118,7 @@ function emailLayout(opts: {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto;">
             <tr>
               <td align="center" class="header-cell email-logo" style="padding-bottom: 32px; font-size: 18px; font-weight: 700; font-family: ${EMAIL_STYLE.fontFamily};">
-                <a href="${PUBLIC_APP_URL.replace(/\/$/, '')}" class="email-logo" style="color: ${EMAIL_STYLE.text} !important; text-decoration: none !important; font-size: 18px !important; font-weight: 700 !important; font-family: ${EMAIL_STYLE.fontFamily};"><span style="color: ${EMAIL_STYLE.accent}; font-weight: 700;">easy</span><span style="color: ${EMAIL_STYLE.text}; font-weight: 700;">seat</span></a>
+                <a href="${PUBLIC_APP_URL.replace(/\/$/, '')}" class="email-logo" style="color: ${EMAIL_STYLE.text} !important; text-decoration: none !important; font-size: 18px !important; font-weight: 700 !important; font-family: ${EMAIL_STYLE.fontFamily};"><span style="color: ${EMAIL_STYLE.accent}; font-weight: 700;">Simply</span><span style="color: ${EMAIL_STYLE.text}; font-weight: 700;">Seat</span></a>
               </td>
             </tr>
           </table>
