@@ -80,13 +80,23 @@ const generalLimiter = rateLimit({
 });
 app.use(generalLimiter);
 
-// Strikteres Limit für Login (Brute-Force-Schutz)
+// Strikteres Limit nur für sensible Auth-Endpunkte (Brute-Force/Abuse-Schutz, wie in Prod-Webapps üblich).
+// Zählen: Login, Registrierung, Passwort vergessen/zurücksetzen, E-Mail-Verifizierung. /auth/me, /auth/logout etc. zählen nicht.
+const AUTH_LIMITED_PATHS = new Set([
+    '/auth/login',
+    '/auth/customer/login',
+    '/auth/customer/register',
+    '/auth/customer/forgot-password',
+    '/auth/customer/reset-password',
+    '/auth/customer/verify-email',
+]);
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: process.env.NODE_ENV === 'production' ? 10 : 30,
-    message: { success: false, message: 'Zu viele Login-Versuche. Bitte in 15 Minuten erneut versuchen.' },
+    message: { success: false, message: 'Zu viele Versuche. Bitte in 15 Minuten erneut versuchen.' },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.method !== 'POST' || !AUTH_LIMITED_PATHS.has(req.path),
 });
 app.use('/auth', authLimiter);
 
