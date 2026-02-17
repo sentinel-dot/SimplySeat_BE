@@ -31,6 +31,18 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 const logger = createLogger('backend.server');
 
+/** In production (e.g. Railway), env vars come from the host – not from .env. Validate and report missing ones. */
+function getMissingProductionEnvVars(): string[] {
+    if (process.env.NODE_ENV !== 'production') return [];
+    const missing: string[] = [];
+    const secret = (process.env.JWT_SECRET ?? '').trim();
+    if (secret.length < 32) missing.push('JWT_SECRET (min. 32 chars, e.g. openssl rand -base64 32)');
+    const dbUrl = process.env.MYSQL_PRIVATE_URL || process.env.MYSQL_URL || process.env.DATABASE_URL;
+    const hasDbVars = process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME;
+    if (!dbUrl && !hasDbVars) missing.push('Database: set MYSQL_PRIVATE_URL (or MYSQL_URL) or DB_HOST, DB_USER, DB_PASSWORD, DB_NAME');
+    return missing;
+}
+
 // Security headers (Helmet)
 app.use(helmet());
 
@@ -150,6 +162,13 @@ const startServer = async() => {
     logger.info('Starting server...')
     try 
     {
+        const missing = getMissingProductionEnvVars();
+        if (missing.length > 0) {
+            logger.error('Missing or invalid production env (e.g. on Railway set these in Variables):');
+            missing.forEach((m) => logger.error('  - ' + m));
+            logger.error('See RAILWAY.md for a full list.');
+            process.exit(1);
+        }
         assertSecureJwtSecret();
         assertSecureCustomerJwtSecret();
         // Teste Datenbankverbindung VOR dem Start
