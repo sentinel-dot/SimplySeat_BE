@@ -123,6 +123,8 @@ Alternativ: Im Backend-Service direkt den Tab **„Logs“** (falls vorhanden) �
 
 3. **PORT:** Railway setzt `PORT` automatisch. Nicht manuell überschreiben.
 
+4. **DB-Pool-Timeout („pool timeout“, active=0 idle=0):** Das Backend wartet 3 s auf das private Netz, dann bis zu 5 Versuche mit je 5 s Abstand. In den Logs steht pro Versuch der Fehlercode (z. B. `ENOTFOUND`, `ECONNREFUSED`, `ETIMEDOUT`). **Backend und MySQL müssen im gleichen Railway-Projekt sein**, damit `*.railway.internal` funktioniert. Bei `ENOTFOUND` (Host nicht auflösbar) evtl. anderes Projekt oder Referenz prüfen; bei `ECONNREFUSED` prüfen, ob der MySQL-Service läuft und Port 3306 erreichbar ist.
+
 ---
 
 ## Neuesten Stand vom Repo ziehen (neu deployen)

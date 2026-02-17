@@ -177,31 +177,46 @@ export async function getConnection(): Promise<PoolConnection>
     }
 }
 
+const DB_CONNECT_RETRIES = 5;
+const DB_CONNECT_RETRY_DELAY_MS = 5000;
+
+const DB_CONNECT_INITIAL_DELAY_MS = 3000;
+
 /**
- * Teste die Datenbankverbindung beim Start
+ * Teste die Datenbankverbindung beim Start.
+ * Railway: Kurze Verzögerung + mehrere Versuche, da das private Netz kurz nach Container-Start bereit sein kann.
  */
-export async function testConnection(): Promise<boolean>
-{
-    let conn: PoolConnection | null = null;
-    try 
-    {
-        conn = await getConnection();
-        logger.info('Database connection test successful');
-        return true;    
-    } 
-    catch (error) 
-    {
-        logger.error('Database connection test failed', error);
-        return false;
+export async function testConnection(): Promise<boolean> {
+    const isRailwayPrivate = poolConfig.host && /\.railway\.internal$/i.test(String(poolConfig.host));
+    if (isRailwayPrivate) {
+        logger.info(`Waiting ${DB_CONNECT_INITIAL_DELAY_MS / 1000}s for Railway private network...`);
+        await new Promise((r) => setTimeout(r, DB_CONNECT_INITIAL_DELAY_MS));
     }
-    finally
-    {
-        if (conn)
-        {
+    let conn: PoolConnection | null = null;
+    let lastError: Error | undefined;
+    for (let attempt = 1; attempt <= DB_CONNECT_RETRIES; attempt++) {
+        try {
+            conn = await pool.getConnection();
+            logger.info('Database connection test successful');
             conn.release();
-            logger.debug('Test connection released');
+            return true;
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            const err = error as NodeJS.ErrnoException & { code?: string; cause?: unknown };
+            const code = err?.code ?? (err?.cause as NodeJS.ErrnoException)?.code;
+            const msg = err?.message ?? String(error);
+            logger.warn(
+                `Database connection attempt ${attempt}/${DB_CONNECT_RETRIES} failed: ${msg}` +
+                (code ? ` (code: ${code})` : '')
+            );
+            if (attempt < DB_CONNECT_RETRIES) {
+                logger.info(`Retrying in ${DB_CONNECT_RETRY_DELAY_MS / 1000}s...`);
+                await new Promise((r) => setTimeout(r, DB_CONNECT_RETRY_DELAY_MS));
+            }
         }
     }
+    logger.error('Database connection test failed after all retries', lastError);
+    return false;
 }
 
 /**
