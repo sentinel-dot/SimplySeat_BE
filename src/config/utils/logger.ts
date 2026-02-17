@@ -97,14 +97,19 @@ class Logger {
   }
 
   /**
-   * Schreibt in Log-Datei
+   * Schreibt in Log-Datei und auf stdout (damit Railway/Paas die Logs anzeigen)
    */
   private writeToFile(message: string): void {
+    // Immer auf stdout, damit Railway/Container-Logs deine Logger-Ausgaben zeigen
+    if (typeof process !== 'undefined' && process.stdout) {
+      process.stdout.write(message + '\n');
+    }
     try {
-      const logFile = this.getCurrentLogFile();
-      fs.appendFileSync(logFile, message + '\n', 'utf8');
+      if (process.env.NODE_ENV !== 'production') {
+        const logFile = this.getCurrentLogFile();
+        fs.appendFileSync(logFile, message + '\n', 'utf8');
+      }
     } catch (error) {
-      // Fallback wenn Datei-Logging fehlschlägt (z. B. Verzeichnis fehlt)
       if (typeof process !== 'undefined' && process.stderr) {
         process.stderr.write(`[${this.context}] Error writing to log file: ${error}\n`);
       }

@@ -96,6 +96,54 @@ Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_URL`** oder
 
 ---
 
+## Wo du die Logs siehst (inkl. deiner Logger-Klasse)
+
+Railway zeigt **stdout/stderr** deiner App. Dein Logger schreibt jetzt zusätzlich auf **stdout**, daher erscheinen alle `logger.info()`, `logger.error()` etc. dort.
+
+**So findest du die Logs:**
+1. Railway Dashboard → dein **Projekt** öffnen  
+2. **Backend-Service** (nicht MySQL) anklicken  
+3. Oben den Tab **„Deployments“** wählen → letzten **Deploy** anklicken  
+4. Rechts bzw. unten **„View Logs“** oder **„Logs“** – dort siehst du den kompletten Output (Build + Runtime) mit deinen Logger-Zeilen.
+
+Alternativ: Im Backend-Service direkt den Tab **„Logs“** (falls vorhanden) – zeigt die Logs des aktuell laufenden Deploys.
+
+---
+
+## Bei 502 „Application failed to respond“
+
+1. **Logs prüfen:** Im Backend-Service → **Deployments** → letzten Deploy öffnen → **View Logs**. Dort siehst du:
+   - **Fehlende Variablen:** Die App beendet sich mit einer Liste (z. B. `JWT_SECRET`, `MYSQL_URL`). Diese im **Variables**-Tab setzen.
+   - **DB-Verbindung fehlgeschlagen:** „Failed to connect to database“ → `MYSQL_URL` oder `MYSQL_PUBLIC_URL` prüfen (Referenz auf MySQL-Service oder korrekte URL).
+   - **App startet:** Wenn „Backend-Server running on http://0.0.0.0:…“ erscheint, läuft der Server; dann kann ein Timeout oder ein anderes Netz-Problem vorliegen → erneut deployen oder Domain neu generieren.
+
+2. **Host-Bindung:** In Production lauscht die App auf `0.0.0.0` (nicht nur localhost), damit Railway sie erreichen kann.
+
+3. **PORT:** Railway setzt `PORT` automatisch. Nicht manuell überschreiben.
+
+---
+
+## Neuesten Stand vom Repo ziehen (neu deployen)
+
+- **Automatisch:** Wenn der Service mit GitHub verbunden ist, deployt Railway bei jedem **Push** auf den verknüpften Branch (z. B. `main`) automatisch. Einfach `git push` – Railway baut und startet den neuen Stand.
+- **Manuell im Dashboard:** Backend-Service öffnen → **Deployments** → **"Deploy"** bzw. **"Redeploy"** (oder über die drei Punkte beim letzten Deploy). Mit **"Deploy"** wird der **neueste Commit** des verbundenen Branches gezogen und neu gebaut.
+- **Command Palette:** Im Railway-Dashboard **Cmd+K** (Mac) bzw. **Strg+K** (Windows) → **"Deploy Latest Commit"** wählen – startet einen Deploy vom letzten Stand des Branches.
+- **Per CLI:** `railway redeploy` (baut den letzten Deploy neu; für neuen Code zuerst pushen, dann im Dashboard „Deploy“ nutzen oder erneut pushen, damit der neueste Commit gezogen wird).
+
+**Branch prüfen:** Unter **Settings** des Backend-Services siehst du, welcher Branch verwendet wird. Nur Pushes auf diesen Branch lösen Auto-Deploys aus.
+
+---
+
+## npm-Warnung „Use \`--omit=dev\` instead“
+
+Die Meldung `npm warn config production Use --omit=dev instead` kommt von der Art, wie Railway/npm `npm install` ausführt (veraltete Option `--production`). Sie ist **harmlos** und beeinflusst den Build nicht.
+
+- **Einfach ignorieren** – Railway bestätigt, dass die Warnung keine Folgen hat.
+- **Optional:** Im Backend-Service unter **Variables** die Variable **`NPM_CONFIG_OMIT`** = **`dev`** setzen. Dann nutzt npm beim Install die neue Option; die Warnung kann verschwinden (je nach Railway-Build-Stack).
+- **Vollständige Kontrolle:** Eigenes **Dockerfile** verwenden und darin z. B. `RUN npm install --omit=dev` ausführen – dann bestimmst du den genauen Befehl.
+
+---
+
 ## Hinweise
 
 - **Keine `.env` auf Railway:** Alle Werte nur über Variables (oder Railway CLI).

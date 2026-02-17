@@ -183,9 +183,10 @@ const startServer = async() => {
         setupGracefulShutdown();
 
 
-        app.listen(PORT, () => {
+        const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : undefined;
+        app.listen(PORT, host, () => {
             startReminderCron();
-            logger.info(`🚀 Backend-Server running on http://localhost:${PORT}`);
+            logger.info(`🚀 Backend-Server running on ${host === '0.0.0.0' ? `http://0.0.0.0:${PORT}` : `http://localhost:${PORT}`}`);
             logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
             logger.info(`🔗 CORS enabled for: ${frontendUrls.length ? frontendUrls.join(', ') : process.env.FRONTEND_URL || 'none'}\n`);
             logger.info('📚 Available endpoints:');
