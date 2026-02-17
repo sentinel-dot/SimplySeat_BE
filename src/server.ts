@@ -28,7 +28,7 @@ import { startReminderCron } from './jobs/reminder.job';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT: number = parseInt(String(process.env.PORT || 5001), 10) || 5001;
 const logger = createLogger('backend.server');
 
 /** In production (e.g. Railway), env vars come from the host – not from .env. Validate and report missing ones. */
@@ -184,7 +184,7 @@ const startServer = async() => {
 
 
         const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : undefined;
-        app.listen(PORT, host, () => {
+        const listenCallback = () => {
             startReminderCron();
             logger.info(`🚀 Backend-Server running on ${host === '0.0.0.0' ? `http://0.0.0.0:${PORT}` : `http://localhost:${PORT}`}`);
             logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
@@ -245,7 +245,12 @@ const startServer = async() => {
             logger.info('   PATCH  /owner/venue/settings - Update venue settings');
             logger.info('   (Passwort ändern: PATCH /auth/me/password für alle Rollen)');
             logger.separator();
-        });
+        };
+        if (host) {
+            app.listen(PORT, host, listenCallback);
+        } else {
+            app.listen(PORT, listenCallback);
+        }
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);
