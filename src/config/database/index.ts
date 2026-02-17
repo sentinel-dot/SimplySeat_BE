@@ -102,6 +102,11 @@ export async function isDatabaseEmpty(conn: PoolConnection): Promise<boolean> {
     return Number(count) === 0;
 }
 
+/** Entfernt SQL-Zeilenkommentare (-- ...), damit Statements mit vorangestelltem Kommentar nicht übersprungen werden. */
+function stripSqlCommentLines(sql: string): string {
+    return sql.replace(/^\s*--[^\r\n]*[\r\n]/gm, '\n');
+}
+
 /** Führt schema.sql aus (ohne CREATE DATABASE / USE simplyseatdb, damit die verbundene DB verwendet wird). */
 export async function runSchema(conn: PoolConnection): Promise<void> {
     const filePath = getSqlPath('schema.sql');
@@ -109,10 +114,11 @@ export async function runSchema(conn: PoolConnection): Promise<void> {
     sql = sql
         .replace(/CREATE\s+DATABASE\s+IF\s+NOT\s+EXISTS\s+simplyseatdb\s*;/gi, '')
         .replace(/USE\s+simplyseatdb\s*;/gi, '');
+    sql = stripSqlCommentLines(sql);
     const statements = sql
         .split(/;\s*[\r\n]+/)
         .map((s) => s.trim())
-        .filter((s) => s.length > 0 && !s.startsWith('--'))
+        .filter((s) => s.length > 0)
         .map((s) => (s.endsWith(';') ? s : s + ';'));
     for (const stmt of statements) {
         if (stmt) await conn.query(stmt);
@@ -125,10 +131,11 @@ export async function runSeed(conn: PoolConnection): Promise<void> {
     const filePath = getSqlPath('seed.sql');
     let sql = fs.readFileSync(filePath, 'utf-8');
     sql = sql.replace(/USE\s+simplyseatdb\s*;/gi, '');
+    sql = stripSqlCommentLines(sql);
     const statements = sql
         .split(/;\s*[\r\n]+/)
         .map((s) => s.trim())
-        .filter((s) => s.length > 0 && !s.startsWith('--'))
+        .filter((s) => s.length > 0)
         .map((s) => (s.endsWith(';') ? s : s + ';'));
     for (const stmt of statements) {
         if (stmt) await conn.query(stmt);
