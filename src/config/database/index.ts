@@ -181,10 +181,12 @@ const DB_CONNECT_RETRIES = 5;
 const DB_CONNECT_RETRY_DELAY_MS = 5000;
 
 const DB_CONNECT_INITIAL_DELAY_MS = 3000;
+/** Kürzerer Timeout für direkte Verbindung, damit wir den echten Fehler (ECONNREFUSED, ENOTFOUND) statt Pool-Timeout sehen. */
+const DB_PROBE_CONNECT_TIMEOUT_MS = 10000;
 
 /**
  * Teste die Datenbankverbindung beim Start.
- * Railway: Kurze Verzögerung + mehrere Versuche, da das private Netz kurz nach Container-Start bereit sein kann.
+ * Railway: Direkte Verbindung (createConnection) mit kürzerem Timeout, damit der echte Fehler geloggt wird; dann Retries.
  */
 export async function testConnection(): Promise<boolean> {
     const isRailwayPrivate = poolConfig.host && /\.railway\.internal$/i.test(String(poolConfig.host));
@@ -192,13 +194,17 @@ export async function testConnection(): Promise<boolean> {
         logger.info(`Waiting ${DB_CONNECT_INITIAL_DELAY_MS / 1000}s for Railway private network...`);
         await new Promise((r) => setTimeout(r, DB_CONNECT_INITIAL_DELAY_MS));
     }
-    let conn: PoolConnection | null = null;
+    const probeConfig: mariadb.PoolConfig = {
+        ...poolConfig,
+        connectTimeout: DB_PROBE_CONNECT_TIMEOUT_MS,
+    };
     let lastError: Error | undefined;
     for (let attempt = 1; attempt <= DB_CONNECT_RETRIES; attempt++) {
+        let conn: mariadb.Connection | null = null;
         try {
-            conn = await pool.getConnection();
+            conn = await mariadb.createConnection(probeConfig);
             logger.info('Database connection test successful');
-            conn.release();
+            await conn.end();
             return true;
         } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
@@ -212,6 +218,14 @@ export async function testConnection(): Promise<boolean> {
             if (attempt < DB_CONNECT_RETRIES) {
                 logger.info(`Retrying in ${DB_CONNECT_RETRY_DELAY_MS / 1000}s...`);
                 await new Promise((r) => setTimeout(r, DB_CONNECT_RETRY_DELAY_MS));
+            }
+        } finally {
+            if (conn) {
+                try {
+                    await conn.end();
+                } catch {
+                    // ignore
+                }
             }
         }
     }
