@@ -1,7 +1,8 @@
 /**
  * E-Mail-Service für Buchungs-Benachrichtigungen
- * Nutzt Nodemailer mit konfigurierbarem SMTP (z. B. Resend, SendGrid, Brevo, Mailgun).
- * Ohne SMTP-Konfiguration werden E-Mails nur geloggt (z. B. lokale Entwicklung).
+ * - Wenn BREVO_API_KEY gesetzt: Versand über Brevo HTTP-API (HTTPS, funktioniert zuverlässig auf Railway/Cloud).
+ * - Sonst Nodemailer mit SMTP (z. B. Resend, SendGrid, Brevo, Mailgun).
+ * - Ohne beides: E-Mails nur im Log (z. B. lokale Entwicklung).
  */
 
 import nodemailer, { Transporter } from 'nodemailer';
@@ -9,6 +10,8 @@ import { createLogger } from '../config/utils/logger';
 import { getConnection } from '../config/database';
 
 const logger = createLogger('email.service');
+
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
 /** Buchungsdaten, die für E-Mail-Texte benötigt werden (inkl. Venue/Service-Namen) */
 export interface BookingForEmail {
@@ -25,9 +28,19 @@ export interface BookingForEmail {
   booking_token?: string | null;
 }
 
-const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@simplyseat.de';
+const MAIL_FROM_RAW = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@simplyseat.de';
+const MAIL_FROM = MAIL_FROM_RAW;
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
 const REMINDER_HOURS = parseInt(process.env.REMINDER_HOURS ?? '24', 10) || 24;
+
+/** Parse "Name<email@domain.com>" or use raw as email. */
+function parseSender(raw: string): { name: string; email: string } {
+  const match = raw.trim().match(/^([^<]*)<([^>]+)>$/);
+  if (match) {
+    return { name: (match[1] || 'SimplySeat').trim(), email: match[2].trim() };
+  }
+  return { name: 'SimplySeat', email: raw.trim() || 'noreply@simplyseat.de' };
+}
 
 /** Design-Tokens wie im Frontend (globals.css) – für E-Mail inline verwendet */
 const EMAIL_STYLE = {
@@ -184,6 +197,44 @@ let cachedTransport: Transporter | null | undefined = undefined;
 function transport(): Transporter | null {
   if (cachedTransport === undefined) cachedTransport = getTransport();
   return cachedTransport;
+}
+
+/** Send via Brevo HTTP API (HTTPS, no SMTP from server – works on Railway/cloud). */
+async function sendViaBrevoApi(to: string, subject: string, html: string, text: string): Promise<boolean> {
+  const apiKey = (process.env.BREVO_API_KEY ?? '').trim();
+  if (!apiKey) return false;
+  const sender = parseSender(MAIL_FROM_RAW);
+  try {
+    const res = await fetch(BREVO_API_URL, {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify({
+        sender: { name: sender.name, email: sender.email },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      logger.error('Brevo API error', { status: res.status, statusText: res.statusText, body: body.slice(0, 500) });
+      return false;
+    }
+    logger.info('Email sent via Brevo API', { to, subject: subject.slice(0, 50) });
+    return true;
+  } catch (err) {
+    logger.error('Brevo API request failed', err);
+    return false;
+  }
+}
+
+function useBrevoApi(): boolean {
+  return !!((process.env.BREVO_API_KEY ?? '').trim());
 }
 
 function manageLink(booking: BookingForEmail): string {
@@ -481,6 +532,11 @@ interface SendMailOptions {
 }
 
 async function sendMail(opts: SendMailOptions): Promise<boolean> {
+  if (useBrevoApi()) {
+    const ok = await sendViaBrevoApi(opts.to, opts.subject, opts.html, opts.text);
+    if (ok) await opts.onSuccess?.();
+    return ok;
+  }
   const trans = transport();
   if (!trans) {
     logger.info(`[DEV] Email would be sent (${opts.type}, booking ${opts.bookingId}) to ${opts.to}: ${opts.subject}`);
@@ -520,6 +576,9 @@ export function getReminderHours(): number {
 
 /** Send a generic email (customer verification, password reset). */
 async function sendCustomerMail(to: string, subject: string, html: string, text: string): Promise<boolean> {
+  if (useBrevoApi()) {
+    return sendViaBrevoApi(to, subject, html, text);
+  }
   const trans = transport();
   if (!trans) {
     logger.info(`[DEV] Customer email would be sent to ${to}: ${subject}`);

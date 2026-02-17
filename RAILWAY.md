@@ -70,7 +70,8 @@ Alternativ: Wenn du keine Referenz siehst, im MySQL-Service **`MYSQL_PRIVATE_URL
 | `FRONTEND_URL`    | Eine erlaubte Origin für CORS, z. B. `https://deine-app.vercel.app` |
 | `FRONTEND_URLS`   | Mehrere Origins, komma-getrennt (z. B. Production + Vercel-Preview-URLs) |
 | `CUSTOMER_JWT_SECRET` | Optional; für Kunden-Login, sonst wird `JWT_SECRET` genutzt. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | E-Mail (z. B. Brevo, Resend, SendGrid). Wenn nicht gesetzt: E-Mails nur im Log. |
+| `BREVO_API_KEY`   | **Empfohlen auf Railway:** Brevo API-Key (SMTP & API → API Keys). Versand per HTTPS statt SMTP – umgeht Connection-Timeout. Wenn gesetzt, wird SMTP ignoriert. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | E-Mail per SMTP (z. B. Brevo, Resend). Wenn weder BREVO_API_KEY noch SMTP: E-Mails nur im Log. |
 | `SMTP_SECURE`     | `true` für Port 465 (SSL), sonst weglassen bzw. `false` für Port 587 (STARTTLS). |
 | `MAIL_FROM`       | Absender in E-Mails, z. B. `SimplySeat<noreply@simplyseat.de>` |
 | `PUBLIC_APP_URL`  | Basis-URL für Links in E-Mails (z. B. Frontend-URL). |
