@@ -53,6 +53,8 @@ const poolConfig: mariadb.PoolConfig = {
     // Längere Timeouts für Railway/Cold-Start (Standard connectTimeout 1s ist oft zu kurz)
     connectTimeout: 20000,
     acquireTimeout: 20000,
+    // MySQL 8 caching_sha2_password: Client darf Public Key vom Server holen (Railway/Cloud-MySQL)
+    allowPublicKeyRetrieval: true,
 };
 
 if (fromUrl) {
