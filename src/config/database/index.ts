@@ -57,10 +57,19 @@ const poolConfig: mariadb.PoolConfig = {
 
 if (fromUrl) {
     poolConfig.host = fromUrl.host;
-    poolConfig.port = fromUrl.port;
+    // Railway: Privater Host (*.railway.internal) lauscht immer auf 3306; URL kann Public-Port enthalten → überschreiben.
+    const isRailwayPrivate = /\.railway\.internal$/i.test(fromUrl.host);
+    poolConfig.port = isRailwayPrivate ? 3306 : fromUrl.port;
+    if (isRailwayPrivate) {
+        (poolConfig as Record<string, unknown>).ssl = false;
+    }
 } else if (dbHost) {
     poolConfig.host = dbHost;
     poolConfig.port = Number.isNaN(dbPort) ? 3306 : dbPort;
+    const isRailwayPrivate = /\.railway\.internal$/i.test(dbHost);
+    if (isRailwayPrivate) {
+        (poolConfig as Record<string, unknown>).ssl = false;
+    }
 } else {
     poolConfig.socketPath = '/run/mysqld/mysqld.sock';
 }
@@ -69,7 +78,7 @@ if (fromUrl) {
 const configSource = fromUrl
     ? (isProduction && process.env.MYSQL_PRIVATE_URL ? 'MYSQL_PRIVATE_URL' : 'MYSQL_URL/MYSQL_PUBLIC_URL')
     : (dbHost ? 'DB_HOST/MYSQLHOST' : 'socket');
-logger.info(`Database config: ${configSource} (host: ${poolConfig.host ?? 'socket'})`);
+logger.info(`Database config: ${configSource} (host: ${poolConfig.host ?? 'socket'}, port: ${poolConfig.port ?? 'n/a'})`);
 
 const pool = mariadb.createPool(poolConfig);
 
