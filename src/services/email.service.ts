@@ -41,21 +41,23 @@ function parseSender(raw: string): { name: string; email: string } {
   return { name: 'SimplySeat', email: raw.trim() || 'noreply@simplyseat.de' };
 }
 
-/** Design-Tokens wie im Frontend (globals.css) – für E-Mail inline verwendet */
+/** Design-Tokens 1:1 aus Frontend (SimplySeat_FE/app/globals.css) – Coral-Theme, für E-Mail in Hex (oklch in Mail-Clients oft nicht unterstützt) */
 const EMAIL_STYLE = {
-  pageBg: '#f9fafb', // Helleres Grau (slate-50)
-  surface: '#ffffff',
-  border: '#e5e7eb', // gray-200
-  text: '#111827', // gray-900
-  textSoft: '#374151', // gray-700
-  muted: '#6b7280', // gray-500
-  accent: '#c41e3a',
-  accentHover: '#a01930',
-  accentMuted: '#fce8eb',
-  radius: '12px',
-  radiusSm: '8px',
-  radiusBtn: '12px', // rounded-xl
+  pageBg: '#faf9f8', // --background oklch(0.99 0.008 75)
+  surface: '#ffffff', // --card
+  border: '#e8e5e1', // --border
+  text: '#2d2a26', // --foreground
+  textSoft: '#6b6560', // --muted-foreground
+  muted: '#6b6560',
+  accent: '#c45c3e', // --primary / themeColor (Coral)
+  accentHover: '#a84d32', // dunkleres Coral
+  accentMuted: '#f5f3f0', // --secondary (warmes Hellgrau)
+  radius: '10px', // --radius 0.625rem
+  radiusSm: '6px', // --radius-sm
+  radiusBtn: '12px', // --radius-xl (Buttons wie im FE)
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"',
+  fontDisplay: 'Georgia, "Times New Roman", serif', // Annäherung an DM Serif Display (FE font-display)
+  shadowCard: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.06)', // --shadow-card
 } as const;
 
 /**
@@ -100,7 +102,8 @@ function emailLayout(opts: {
   <![endif]-->
   <style>
     .email-cta, .email-cta a { color: #ffffff !important; text-decoration: none !important; }
-    .email-logo, .email-logo a { color: #111827 !important; text-decoration: none !important; font-size: 18px !important; font-weight: 700 !important; }
+    .email-logo, .email-logo a { color: ${EMAIL_STYLE.text} !important; text-decoration: none !important; font-size: 20px !important; font-weight: 600 !important; font-family: ${EMAIL_STYLE.fontDisplay} !important; letter-spacing: -0.02em !important; }
+    .email-h1 { font-family: ${EMAIL_STYLE.fontDisplay} !important; font-size: 24px !important; font-weight: 600 !important; letter-spacing: -0.02em !important; }
     @media screen and (max-width: 600px) {
       .content-cell { padding: 24px !important; }
       .header-cell { padding: 24px 0 !important; }
@@ -113,17 +116,17 @@ function emailLayout(opts: {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td align="center" style="padding: 40px 16px;">
-          <!-- Logo: Größe/Farbe auf td + Spans, damit Clients es nicht als blauen Link darstellen -->
+          <!-- Logo wie im Frontend: Simply (primary) + Seat (foreground), font-display -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto;">
             <tr>
-              <td align="center" class="header-cell email-logo" style="padding-bottom: 32px; font-size: 18px; font-weight: 700; font-family: ${EMAIL_STYLE.fontFamily};">
-                <a href="${PUBLIC_APP_URL.replace(/\/$/, '')}" class="email-logo" style="color: ${EMAIL_STYLE.text} !important; text-decoration: none !important; font-size: 18px !important; font-weight: 700 !important; font-family: ${EMAIL_STYLE.fontFamily};"><span style="color: ${EMAIL_STYLE.accent}; font-weight: 700;">Simply</span><span style="color: ${EMAIL_STYLE.text}; font-weight: 700;">Seat</span></a>
+              <td align="center" class="header-cell email-logo" style="padding-bottom: 32px; font-size: 20px; font-weight: 600; font-family: ${EMAIL_STYLE.fontDisplay}; letter-spacing: -0.02em;">
+                <a href="${PUBLIC_APP_URL.replace(/\/$/, '')}" class="email-logo" style="color: ${EMAIL_STYLE.text} !important; text-decoration: none !important; font-size: 20px !important; font-weight: 600 !important; font-family: ${EMAIL_STYLE.fontDisplay}; letter-spacing: -0.02em;"><span style="color: ${EMAIL_STYLE.accent}; font-weight: 600;">Simply</span><span style="color: ${EMAIL_STYLE.text}; font-weight: 600;">Seat</span></a>
               </td>
             </tr>
           </table>
 
-          <!-- Card -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: ${EMAIL_STYLE.surface}; border-radius: ${EMAIL_STYLE.radius}; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+          <!-- Card – Schatten wie Frontend (--shadow-card) -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: ${EMAIL_STYLE.surface}; border-radius: ${EMAIL_STYLE.radius}; box-shadow: ${EMAIL_STYLE.shadowCard}; border: 1px solid ${EMAIL_STYLE.border};">
             <tr>
               <td class="content-cell" style="padding: 48px;">
                 ${bodyContent}
@@ -258,7 +261,7 @@ function notesBlock(booking: BookingForEmail): { html: string; text: string } {
   const escaped = String(booking.special_requests).replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return {
     html: `
-    <div style="margin-top: 24px; padding: 16px; background-color: #fff1f2; border-radius: 8px; border: 1px solid ${EMAIL_STYLE.accentMuted};">
+    <div style="margin-top: 24px; padding: 16px; background-color: ${EMAIL_STYLE.accentMuted}; border-radius: ${EMAIL_STYLE.radiusSm}; border: 1px solid ${EMAIL_STYLE.border};">
       <p style="margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${EMAIL_STYLE.accent};">Ihre Notizen</p>
       <p style="margin: 8px 0 0 0; font-size: 14px; color: ${EMAIL_STYLE.textSoft}; line-height: 1.5;">${escaped}</p>
     </div>\n`,
@@ -279,14 +282,14 @@ function bookingDetailsBlock(booking: BookingForEmail): string {
     : '';
 
   return `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 32px 0; background-color: #f9fafb; border-radius: 12px; overflow: hidden;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 32px 0; background-color: ${EMAIL_STYLE.accentMuted}; border-radius: ${EMAIL_STYLE.radius}; border: 1px solid ${EMAIL_STYLE.border}; overflow: hidden;">
     <tr>
       <td style="padding: 24px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <td style="padding-bottom: 8px;">
               <p style="margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${EMAIL_STYLE.muted};">Service</p>
-              <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 700; color: ${EMAIL_STYLE.text}; line-height: 1.3;">${(booking.service_name || 'Ihre Buchung').replace(/</g, '&lt;')}</p>
+              <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 600; color: ${EMAIL_STYLE.text}; line-height: 1.3;">${(booking.service_name || 'Ihre Buchung').replace(/</g, '&lt;')}</p>
             </td>
           </tr>
           <tr>
@@ -342,7 +345,7 @@ export async function sendBookingReceived(booking: BookingForEmail): Promise<boo
   const subject = `Vielen Dank für Ihre Buchung bei ${venueName}`;
 
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Buchung eingegangen</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Buchung eingegangen</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${booking.customer_name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Vielen Dank für Ihre Buchung. Wir haben Ihre Anfrage erhalten und prüfen sie. Sie erhalten in Kürze eine Bestätigung, sobald Ihr Termin freigegeben ist.</p>
   ${bookingDetailsBlock(booking)}
@@ -388,7 +391,7 @@ export async function sendConfirmation(
     : `Ihre Buchung wurde bestätigt. Wir freuen uns auf Ihren Besuch.`;
 
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Buchung bestätigt</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Buchung bestätigt</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${booking.customer_name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">${intro}</p>
   ${bookingDetailsBlock(booking)}
@@ -425,7 +428,7 @@ export async function sendCancellation(booking: BookingForEmail): Promise<boolea
   const subject = `Ihre Buchung bei ${venueName} wurde storniert`;
 
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Buchung storniert</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Buchung storniert</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${booking.customer_name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Ihre folgende Buchung wurde storniert:</p>
   ${bookingDetailsBlock(booking)}
@@ -460,7 +463,7 @@ export async function sendReminder(booking: BookingForEmail): Promise<boolean> {
   const subject = `Erinnerung: Ihr Termin bei ${venueName} morgen`;
 
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Terminerinnerung</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Terminerinnerung</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${booking.customer_name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Wir erinnern Sie an Ihren Termin morgen:</p>
   ${bookingDetailsBlock(booking)}
@@ -498,7 +501,7 @@ export async function sendReviewInvitation(booking: BookingForEmail, venueId: nu
   const subject = `Wie hat es Ihnen gefallen? Bewerten Sie ${venueName}`;
 
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Wie war es?</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Wie war es?</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${booking.customer_name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Ihr Termin bei <strong style="color: ${EMAIL_STYLE.text};">${venueName.replace(/</g, '&lt;')}</strong> ist abgeschlossen. Wir würden uns sehr freuen, wenn Sie uns Ihre Erfahrung mitteilen.</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Ihre Bewertung hilft anderen Gästen und uns, unseren Service zu verbessern.</p>`;
@@ -616,7 +619,7 @@ export async function sendCustomerVerificationEmail(email: string, name: string,
   const verifyUrl = `${baseUrl}/auth/verify-email?token=${encodeURIComponent(verificationToken)}`;
   const subject = 'E-Mail-Adresse bestätigen – SimplySeat';
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">E-Mail bestätigen</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">E-Mail bestätigen</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Bitte bestätigen Sie Ihre E-Mail-Adresse, um Ihre Registrierung bei SimplySeat abzuschließen.</p>
   <p style="margin: 24px 0 0 0; font-size: 13px; color: ${EMAIL_STYLE.muted}; word-break: break-all;">Falls der Button nicht funktioniert, kopieren Sie diesen Link in Ihren Browser:<br><a href="${verifyUrl}" style="color: ${EMAIL_STYLE.accent}; text-decoration: none;">${verifyUrl}</a></p>
@@ -640,7 +643,7 @@ export async function sendCustomerPasswordResetEmail(email: string, name: string
   const resetUrl = `${baseUrl}/auth/reset-password?token=${encodeURIComponent(resetToken)}`;
   const subject = 'Passwort zurücksetzen – SimplySeat';
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Passwort zurücksetzen</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Passwort zurücksetzen</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Sie haben eine Anfrage zum Zurücksetzen Ihres Passworts gestellt. Klicken Sie auf den Button, um ein neues Passwort zu vergeben.</p>
   <p style="margin: 24px 0 0 0; font-size: 13px; color: ${EMAIL_STYLE.muted}; word-break: break-all;">Falls der Button nicht funktioniert, kopieren Sie diesen Link in Ihren Browser:<br><a href="${resetUrl}" style="color: ${EMAIL_STYLE.accent}; text-decoration: none;">${resetUrl}</a></p>
@@ -669,7 +672,7 @@ export async function sendWelcomeEmail(email: string, name: string, loyaltyPoint
     : '';
   
   const bodyContent = `
-  <h1 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 700; color: ${EMAIL_STYLE.text}; letter-spacing: -0.5px;">Willkommen bei SimplySeat!</h1>
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Willkommen bei SimplySeat!</h1>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Hallo ${name.replace(/</g, '&lt;')},</p>
   <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Vielen Dank für die Bestätigung Ihrer E-Mail-Adresse! Ihr Konto ist jetzt vollständig aktiviert.</p>
   ${pointsMessage}
