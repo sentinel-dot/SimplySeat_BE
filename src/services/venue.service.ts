@@ -711,4 +711,59 @@ export class VenueService
             }
         }
     }
+
+    /**
+     * Autocomplete für Ortssuche: liefert unique cities und postal_codes
+     * @param query Suchstring (min. 2 Zeichen)
+     * @returns Array von Location-Strings (max. 10)
+     */
+    static async getLocationSuggestions(query: string): Promise<string[]> {
+        const q = query.trim();
+        if (q.length < 2) return [];
+        
+        let conn;
+        try {
+            conn = await getConnection();
+            
+            const isNumeric = /^\d+$/.test(q);
+            const searchPattern = `${q}%`;
+            
+            let results: string[] = [];
+            
+            if (isNumeric) {
+                const rows = await conn.query(
+                    `SELECT DISTINCT postal_code as location 
+                     FROM venues 
+                     WHERE is_active = true 
+                       AND postal_code LIKE ? 
+                     ORDER BY postal_code 
+                     LIMIT 10`,
+                    [searchPattern]
+                ) as { location: string }[];
+                results = rows.map(r => r.location).filter(Boolean);
+            } else {
+                const likePattern = `%${q}%`;
+                const rows = await conn.query(
+                    `SELECT DISTINCT city as location 
+                     FROM venues 
+                     WHERE is_active = true 
+                       AND city LIKE ? 
+                     ORDER BY 
+                       CASE WHEN city LIKE ? THEN 0 ELSE 1 END,
+                       city 
+                     LIMIT 10`,
+                    [likePattern, searchPattern]
+                ) as { location: string }[];
+                results = rows.map(r => r.location).filter(Boolean);
+            }
+            
+            logger.debug(`Location suggestions for "${q}": ${results.length} results`);
+            return results;
+        } catch (error) {
+            logger.error('Error fetching location suggestions', error);
+            throw error;
+        } finally {
+            if (conn) conn.release();
+        }
+    }
 }

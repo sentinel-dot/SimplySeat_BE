@@ -793,3 +793,71 @@ export async function sendWelcomeEmail(email: string, name: string, loyaltyPoint
   
   return sendCustomerMail(email, subject, html, text);
 }
+
+/**
+ * Send contact form submission to configured email address
+ */
+export async function sendContactFormEmail(
+  name: string,
+  email: string,
+  subject: string,
+  message: string
+): Promise<boolean> {
+  const contactRecipient = process.env.CONTACT_EMAIL || 'info@simplyseat.de';
+  const emailSubject = `[SimplySeat Kontakt] ${subject}`;
+  
+  const bodyContent = `
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Neue Kontaktanfrage</h1>
+  <div style="margin: 24px 0; padding: 20px; background-color: ${EMAIL_STYLE.accentMuted}; border-radius: ${EMAIL_STYLE.radius}; border: 1px solid ${EMAIL_STYLE.border};">
+    <p style="margin: 0 0 12px 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">Von</p>
+    <p style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: ${EMAIL_STYLE.text};">${name.replace(/</g, '&lt;')}</p>
+    <p style="margin: 0 0 12px 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">E-Mail</p>
+    <p style="margin: 0 0 16px 0; font-size: 16px; color: ${EMAIL_STYLE.text};"><a href="mailto:${email.replace(/</g, '&lt;')}" style="color: ${EMAIL_STYLE.accent}; text-decoration: none;">${email.replace(/</g, '&lt;')}</a></p>
+    <p style="margin: 0 0 12px 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">Betreff</p>
+    <p style="margin: 0; font-size: 16px; color: ${EMAIL_STYLE.text};">${subject.replace(/</g, '&lt;')}</p>
+  </div>
+  <div style="margin: 24px 0; padding: 20px; background-color: ${EMAIL_STYLE.surface}; border-radius: ${EMAIL_STYLE.radius}; border: 1px solid ${EMAIL_STYLE.border};">
+    <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: ${EMAIL_STYLE.text};">Nachricht</p>
+    <p style="margin: 0; font-size: 15px; color: ${EMAIL_STYLE.textSoft}; line-height: 1.6; white-space: pre-wrap;">${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+  </div>
+  <p style="margin: 24px 0 0 0; font-size: 13px; color: ${EMAIL_STYLE.muted};">Um zu antworten, nutzen Sie einfach die Antworten-Funktion Ihres E-Mail-Clients. Die E-Mail des Absenders lautet: ${email.replace(/</g, '&lt;')}</p>`;
+  
+  const html = emailLayout({
+    title: 'Neue Kontaktanfrage',
+    bodyContent,
+    preheader: `Neue Nachricht von ${name}`,
+  });
+  
+  const text = `Neue Kontaktanfrage über SimplySeat\n\nVon: ${name}\nE-Mail: ${email}\nBetreff: ${subject}\n\nNachricht:\n${message}\n\n---\nUm zu antworten, schreiben Sie direkt an: ${email}`;
+  
+  if (useBrevoApi()) {
+    return sendViaBrevoApi(contactRecipient, emailSubject, html, text);
+  }
+  const trans = transport();
+  if (!trans) {
+    logger.info(`[DEV] Contact form email would be sent to ${contactRecipient} from ${email}: ${subject}`);
+    return true;
+  }
+  try {
+    await trans.sendMail({
+      from: MAIL_FROM,
+      replyTo: email,
+      to: contactRecipient,
+      subject: emailSubject,
+      html,
+      text,
+    });
+    logger.info(`Contact form email sent to ${contactRecipient} from ${email}`);
+    return true;
+  } catch (err) {
+    logger.error('Failed to send contact form email', err);
+    if (smtpConfigForLog) {
+      logger.error('SMTP connection failed – config used', {
+        ...smtpConfigForLog,
+        to: contactRecipient,
+        hint: 'Check: host/port correct, no quotes in Railway vars, Brevo allows cloud IPs (or disable IP restriction).',
+      });
+    }
+    return false;
+  }
+}

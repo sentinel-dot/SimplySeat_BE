@@ -21,6 +21,7 @@ import customerRoutes from './routes/customer.routes';
 import favoritesRoutes from './routes/favorites.routes';
 import reviewsRoutes from './routes/reviews.routes';
 import loyaltyRoutes from './routes/loyalty.routes';
+import contactRoutes from './routes/contact.routes';
 import { assertSecureJwtSecret } from './services/auth.service';
 import { assertSecureJwtSecret as assertSecureCustomerJwtSecret } from './services/customer-auth.service';
 import { startReminderCron } from './jobs/reminder.job';
@@ -43,6 +44,16 @@ function getMissingProductionEnvVars(): string[] {
     const dbUrl = process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_PRIVATE_URL || process.env.DATABASE_URL;
     if (!dbUrl) missing.push('Database: set MYSQL_URL (or MYSQL_PRIVATE_URL / MYSQL_PUBLIC_URL)');
     return missing;
+}
+
+/** Validate critical email configuration */
+function validateEmailConfig(): void {
+    const contactEmail = (process.env.CONTACT_EMAIL ?? '').trim();
+    if (!contactEmail) {
+        logger.warn('CONTACT_EMAIL not set. Contact form emails will fail. Set CONTACT_EMAIL in environment variables.');
+    } else {
+        logger.info('Contact form configured', { contactEmail });
+    }
 }
 
 // Security headers (Helmet)
@@ -156,6 +167,9 @@ app.use('/admin', adminRoutes);
 // Owner routes (protected, role owner only = Venue-Management)
 app.use('/owner', ownerRoutes);
 
+// Contact form route (public)
+app.use('/contact', contactRoutes);
+
 
 // 404 - Handler
 app.use((req, res) => {
@@ -185,6 +199,10 @@ const startServer = async() => {
         }
         assertSecureJwtSecret();
         assertSecureCustomerJwtSecret();
+        
+        // Validate email configuration
+        validateEmailConfig();
+        
         // Teste Datenbankverbindung VOR dem Start
         const dbConnected = await testConnection();
 

@@ -116,6 +116,26 @@ router.get('/stats', async (req, res) => {
 });
 
 /**
+ * GET /venues/locations/autocomplete
+ * Autocomplete für Ortssuche: liefert unique cities und postal_codes aus venues
+ * Query: q (min. 2 Zeichen)
+ */
+router.get('/locations/autocomplete', async (req, res) => {
+    const query = (req.query.q as string | undefined)?.trim() || '';
+    
+    if (query.length < 2) {
+        return res.json({ success: true, data: [] });
+    }
+    
+    try {
+        const suggestions = await VenueService.getLocationSuggestions(query);
+        res.json({ success: true, data: suggestions });
+    } catch (error) {
+        return sendError(res, 500, 'Failed to retrieve location suggestions', error);
+    }
+});
+
+/**
  * GET /venues/:id
  * Ein spezifisches Venue mit Services und Staff
  */
