@@ -211,7 +211,7 @@ const startServer = async() => {
             process.exit(1);
         }
 
-        if (process.env.NODE_ENV === 'development') {
+        if (process.env.NODE_ENV === 'production') {
             await resetSchemaAndSeedForDevelopment();
         } else {
             await ensureSchemaAndSeedIfEmpty();
