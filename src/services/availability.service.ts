@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mariadb';
 import { createLogger } from '../config/utils/logger';
 import { getConnection } from '../config/database';
 
@@ -28,24 +29,27 @@ export class AvailabilityService
     }
 
     /*
-     * Prüft. ob sich zwei Zeitslots überschneiden
+     * Prüft, ob sich zwei Zeitslots überschneiden.
+     * Berücksichtigt Übernacht-Slots (z. B. Bar 23:00–01:00).
      */
     static timeSlotsOverlap(
-        slot1Start: string,         // Start von Slot 1 (z.B. "14:00")
-        slot1End: string,           // Ende von Slot 1 (z.B. "15:00")
-        slot2Start: string,         // Start von Slot 2 (z.B. "14:30")
-        slot2End: string            // Ende von Slot 2 (z.B. "15:30")
+        slot1Start: string,
+        slot1End: string,
+        slot2Start: string,
+        slot2End: string
     ): boolean
     {
-        // Konvertiert alle Zeiten in Minuten (z.B. "14:00" → 840, "15:00" → 900)
-        const slot1StartMinutes = this.timeStringToMinutes(slot1Start);
-        const slot1EndMinutes = this.timeStringToMinutes(slot1End);
-        const slot2StartMinutes = this.timeStringToMinutes(slot2Start);
-        const slot2EndMinutes = this.timeStringToMinutes(slot2End);
+        let s1 = this.timeStringToMinutes(slot1Start);
+        let e1 = this.timeStringToMinutes(slot1End);
+        let s2 = this.timeStringToMinutes(slot2Start);
+        let e2 = this.timeStringToMinutes(slot2End);
+        
+        // Übernacht-Slots: Ende + 24h wenn Ende <= Start
+        if (e1 <= s1) e1 += 24 * 60;
+        if (e2 <= s2) e2 += 24 * 60;
 
-        // Überschneidungslogik: Slot1 startet vor Ende von Slot2 UND Slot2 startet vor Ende von Slot1
-        // Beispiel: 840 < 930 (14:00 < 15:30) UND 870 < 900 (14:30 < 15:00) = true → Überschneidung!
-        return slot1StartMinutes < slot2EndMinutes && slot2StartMinutes < slot1EndMinutes
+        // Standard-Überschneidungsprüfung: Zwei Intervalle überschneiden sich, wenn Start1 < Ende2 UND Start2 < Ende1
+        return s1 < e2 && s2 < e1;
     }
 
     /**
@@ -66,8 +70,13 @@ export class AvailabilityService
         const slots: TimeSlot[] = [];
 
         // Konvertiert Startzeit/Endzeit in Gesamtminuten seit Mitternacht
-        const startTotalMinutes = this.timeStringToMinutes(startTime);      // Bei 14:30 Z.B. ist es dann 840 + 30 = 870
-        const endTotalMinutes = this.timeStringToMinutes(endTime);          // Bei 15:30 z.B. ist es dann 900 + 30 = 930
+        let startTotalMinutes = this.timeStringToMinutes(startTime);      // Bei 14:30 Z.B. ist es dann 840 + 30 = 870
+        let endTotalMinutes = this.timeStringToMinutes(endTime);          // Bei 15:30 z.B. ist es dann 900 + 30 = 930
+
+        // Übernacht-Zeiten (z. B. Bar 18:00–02:00): Ende am nächsten Tag → Ende + 24h für die Schleife
+        if (endTotalMinutes <= startTotalMinutes) {
+            endTotalMinutes += 24 * 60;
+        }
 
         // Berechnet die Gesamtdauer inklusive optionalem Puffer (MVP: nur duration)
         const slotDuration = duration;// + bufferAfter;
@@ -81,18 +90,16 @@ export class AvailabilityService
         {
             // Beispiel: currentMinutes = 885 (das sind 14:45 Uhr)
 
-            // 1. Slot-STARTZEIT berechnen
-            const slotStartHour = Math.floor(currentMinutes / 60);          // = 14 (volle Stunden)
-            const slotStartMinute = currentMinutes % 60;                    // = 45 (Rest-Minuten)
-            // Ergebnis: 14:45
+            // 1. Slot-STARTZEIT berechnen (immer am selben Tag, Stunde 0–23)
+            const slotStartHour = Math.floor(currentMinutes / 60) % 24;
+            const slotStartMinute = currentMinutes % 60;
 
             // 2. Slot-ENDZEIT in Minuten berechnen
-            const slotEndMinutes = currentMinutes + duration;               // = 945 (bei 60 Min duration)
+            const slotEndMinutes = currentMinutes + duration;
 
-            // 3. Slot-ENDZEIT in Stunden:Minuten umrechnen
-            const slotEndHour = Math.floor(slotEndMinutes / 60);            // = 15 (volle Stunden)
-            const slotEndMinuteRemainder = slotEndMinutes % 60;             // = 45 (Rest-Minuten)
-            // Ergebnis: 15:45
+            // 3. Slot-ENDZEIT in Stunden:Minuten (über Mitternacht: 25:00 → 01:00 anzeigen)
+            const slotEndHour = Math.floor(slotEndMinutes / 60) % 24;
+            const slotEndMinuteRemainder = slotEndMinutes % 60;
 
 
             // Formatiert Start/End-Zeit als String mit führenden Nullen (z.B. "09:30")
@@ -112,7 +119,8 @@ export class AvailabilityService
     }
 
     /**
-     * Prüft, ob ein spezifischer Zeitslot für eine Buchung verfügbar ist
+     * Prüft, ob ein spezifischer Zeitslot für eine Buchung verfügbar ist.
+     * @param existingConn - Optional: bestehende Connection (z. B. für Transaktion); wird nicht released.
      */
     static async isTimeSlotAvailable(
         venueId: number,                // ID des Geschäfts
@@ -122,7 +130,8 @@ export class AvailabilityService
         startTime: string,              // Startzeit in HH:MM
         endTime: string,                // Endzeit in HH:MM
         partySize: number = 1,          // Anzahl Personen (Standard: 1)
-        excludeBookingId?: number       // Optional: Buchung die ignoriert werden soll (für Updates)
+        excludeBookingId?: number,      // Optional: Buchung die ignoriert werden soll (für Updates)
+        existingConn?: PoolConnection   // Optional: für Transaktion (Race-Condition-Vermeidung)
     ): Promise<{ available: boolean; reason?: string }> 
     {
         logger.info('Validating slot availability...',{
@@ -136,10 +145,11 @@ export class AvailabilityService
             exclude_booking_id: excludeBookingId
         });
 
-        let conn;
+        const useExistingConn = !!existingConn;
+        let conn: PoolConnection | undefined = existingConn;
         try 
         {
-            conn = await getConnection();
+            if (!conn) conn = await getConnection();
             logger.debug('Database connection established');
 
             const services = await conn.query(`
@@ -167,8 +177,17 @@ export class AvailabilityService
             // Castet ersten Eintrag zu Service-Typ und nimmt nur die drei Werte
             const service = services[0];
 
+            // Strikt: Bei Staff-Service muss ein Mitarbeiter gewählt sein
+            if (service.requires_staff && (staffMemberId == null || staffMemberId === 0))
+            {
+                logger.warn('Staff member is required for this service');
+                return {
+                    available: false,
+                    reason: 'Staff member is required for this service'
+                };
+            }
 
-            // Prüfe, pb die Gruppengröße die Kapazität überschreitet
+            // Prüfe, ob die Gruppengröße die Kapazität überschreitet
             if (partySize > service.capacity)
             {
                 logger.warn(`Party size exceeds capacity (max: ${service.capacity})`);
@@ -186,7 +205,7 @@ export class AvailabilityService
             const dayOfWeek = requestedDate.getDay();
 
 
-            // Prüfe Verfüp - gbarkeitsregeln
+            // Prüfe Verfügbarkeitsregeln
             // Wenn Staff benötigt wird, holen wir uns die 
             if (service.requires_staff && staffMemberId)
             {
@@ -213,10 +232,15 @@ export class AvailabilityService
 
 
                 // Prüfe, ob gewünschte Uhrzeit innerhalb der Arbeitszeiten liegt
-                const isWithinStaffHours = staffRules.some((rule: any) =>                                       // Durchläuft alle Schichten (z.B. 09:00-12:00, 14:00-18:00) und prüft, ob der Slot in EINE davon passt
-                    this.timeStringToMinutes(startTime) >= this.timeStringToMinutes(rule.start_time) &&         // Meine gewünschte startTime muss größer gleich wie start_time vom Mitarbeiter sein
-                    this.timeStringToMinutes(endTime) <= this.timeStringToMinutes(rule.end_time)                // Meine gewünschte endTime muss kleiner gleich wie end_time vom Mitarbeiter sein 
-                );
+                const isWithinStaffHours = staffRules.some((rule: any) => {
+                    const ruleStart = this.timeStringToMinutes(rule.start_time);
+                    let ruleEnd = this.timeStringToMinutes(rule.end_time);
+                    if (ruleEnd <= ruleStart) ruleEnd += 24 * 60; // Übernacht-Slot
+                    const slotStart = this.timeStringToMinutes(startTime);
+                    let slotEnd = this.timeStringToMinutes(endTime);
+                    if (slotEnd <= slotStart) slotEnd += 24 * 60; // Übernacht-Slot
+                    return slotStart >= ruleStart && slotEnd <= ruleEnd;
+                });
                 
                 // Gebe Fehler zurück, wenn außerhalb Arbeitszeiten
                 if (!isWithinStaffHours)
@@ -254,10 +278,16 @@ export class AvailabilityService
 
 
                 // Prüfe, ob gewünschte Zeit innerhalb der Öffnungszeiten liegt
-                const isWithinVenueHours = venueRules.some((rule: any) =>
-                    this.timeStringToMinutes(startTime) >= this.timeStringToMinutes(rule.start_time) &&
-                    this.timeStringToMinutes(endTime) <= this.timeStringToMinutes(rule.end_time)
-                );
+                // Übernacht-Regel (z. B. Bar 18:00–02:00): Ende als „nächster Tag“ behandeln
+                const isWithinVenueHours = venueRules.some((rule: any) => {
+                    const ruleStart = this.timeStringToMinutes(rule.start_time);
+                    let ruleEnd = this.timeStringToMinutes(rule.end_time);
+                    if (ruleEnd <= ruleStart) ruleEnd += 24 * 60;
+                    const slotStart = this.timeStringToMinutes(startTime);
+                    let slotEnd = this.timeStringToMinutes(endTime);
+                    if (slotEnd <= slotStart) slotEnd += 24 * 60;
+                    return slotStart >= ruleStart && slotEnd <= ruleEnd;
+                });
 
 
                 // Gebe Fehler zurück, wenn außerhalb Öffnungszeiten
@@ -371,25 +401,37 @@ export class AvailabilityService
             ) as { id: number; start_time: string; end_time: string; party_size: number; status: string }[];;
 
             // Prüfe, ob für den Zeitraum bereits eine Buchung existiert
+            // Für kapazitätsbasierte Services: Summiere alle überlappenden Buchungen
+            let totalOccupancy = 0;
+            
             for (const booking of existingBookings)
             {
                 // Prüfe, ob Zeitüberschneidung existiert
                 if (this.timeSlotsOverlap(startTime, endTime, booking.start_time, booking.end_time))
                 {
-                    // SONDERFALL: Service ohne festen Mitarbeiter + genug Kapazität
-                    if (!service.requires_staff && partySize + booking.party_size <= service.capacity)
-                    {                                                                                       // Für kapazitätsbasierte Services ohne Mitarbeiter (z.B. Restaurant mit 6 Plätzen)
-                        continue; // ← Überspringe diese Buchung, mache mit nächster weiter                 // Beispiel: 2 Personen bereits gebucht + 3 neue = 5 Gesamt → passt noch rein (continue zur nächsten Buchung)
+                    // Für Mitarbeiter-Services: Slot blockiert wenn Mitarbeiter bereits gebucht
+                    if (service.requires_staff)
+                    {
+                        logger.warn('Time slot already booked');
+                        return {
+                            available: false,
+                            reason: 'Time slot already booked'
+                        };
                     }
-
-                    // Slot bereits gebucht
-                    logger.warn('Time slot already booked');
-
-                    return {
-                        available: false,
-                        reason: 'Time slot already booked'
-                    };
+                    
+                    // Für kapazitätsbasierte Services: Summiere Belegung
+                    totalOccupancy += booking.party_size;
                 }
+            }
+            
+            // Für kapazitätsbasierte Services: Prüfe ob noch genug Kapazität verfügbar
+            if (!service.requires_staff && totalOccupancy + partySize > service.capacity)
+            {
+                logger.warn(`Insufficient capacity (${service.capacity - totalOccupancy}/${service.capacity} remaining, ${partySize} requested)`);
+                return {
+                    available: false,
+                    reason: 'Insufficient capacity for requested party size'
+                };
             }
 
             // Alles ok – Slot verfügbar
@@ -410,7 +452,7 @@ export class AvailabilityService
         }
         finally
         {
-            if (conn) 
+            if (conn && !useExistingConn) 
             {
                 conn.release();
                 logger.debug('Database connection released');
@@ -424,13 +466,14 @@ export class AvailabilityService
      * Holt alle verfügbaren Zeitslots für einen Service an einem bestimmten Datum.
      * Optional: partySize (nur Slots mit remaining_capacity >= partySize),
      * timeWindowStart/timeWindowEnd (nur Slots in diesem Zeitfenster),
-     * excludeBookingId (für Reschedule – eigene Buchung nicht als "blockiert" zählen).
+     * excludeBookingId (für Reschedule – eigene Buchung nicht als "blockiert" zählen),
+     * staffMemberId (nur Slots dieses Mitarbeiters, für Schritt „Mitarbeiter wählen“).
      */
     static async getAvailableSlots(
         venueId: number,
         serviceId: number,
         date: string,
-        options?: { partySize?: number; timeWindowStart?: string; timeWindowEnd?: string; excludeBookingId?: number }
+        options?: { partySize?: number; timeWindowStart?: string; timeWindowEnd?: string; excludeBookingId?: number; staffMemberId?: number }
     ): Promise<DayAvailability>
     {
         const partySize = options?.partySize ?? 1;
@@ -478,8 +521,8 @@ export class AvailabilityService
             // Logik für Mitarbeitergebundene Services
             if (service.requires_staff)
             {
-                // Hole alle Mitarbeiter, die diesen Service anbieten können
-                const staffMembers = await conn.query(`
+                // Hole alle Mitarbeiter, die diesen Service anbieten können (oder nur den gewählten)
+                let staffMembers = await conn.query(`
                     SELECT sm.id as staff_id, sm.name as staff_name
                     FROM staff_services ss
                     JOIN staff_members sm 
@@ -488,6 +531,10 @@ export class AvailabilityService
                     AND sm.is_active = true`,
                     [serviceId]
                 ) as { staff_id: number; staff_name: string }[];
+
+                if (options?.staffMemberId != null) {
+                    staffMembers = staffMembers.filter((s) => s.staff_id === options.staffMemberId);
+                }
 
                 // Generiere Slots für jeden verfügbaren Mitarbeiter
                 for (const staffMember of staffMembers)
@@ -552,6 +599,9 @@ export class AvailabilityService
                 }
             }
 
+            // Geschlossen = an diesem Tag keine Öffnungszeiten/Regeln (vor Buchungsprüfung)
+            const hadOpeningHours = availableSlots.length > 0;
+
             /*
              * MVP: deaktiviert. Für spätere Erweiterung vorgesehen.
              * Sonderverfügbarkeit (Schließungen, Feiertage) – Slots in Schließzeiten herausfiltern.
@@ -609,31 +659,46 @@ export class AvailabilityService
             // Bei Mitarbeiter-Services: alle Buchungen mit Mitarbeiter an dem Tag (jeder Service),
             // damit Slots blockiert werden, wenn der Mitarbeiter schon einen anderen Service hat.
             // excludeBookingId: Für Reschedule – eigene Buchung nicht als "blockiert" zählen
-            const existingBookings = service.requires_staff
-                ? (await conn.query(`
+            let existingBookings: { start_time: string; end_time: string; staff_member_id: number | null; party_size: number }[];
+            
+            if (service.requires_staff) {
+                let bookingQuery = `
                     SELECT start_time, end_time, staff_member_id, party_size
                     FROM bookings
                     WHERE venue_id = ?
                     AND booking_date = ?
                     AND staff_member_id IS NOT NULL
-                    AND status = 'confirmed'
-                    ${options?.excludeBookingId ? 'AND id != ?' : ''}`,
-                    options?.excludeBookingId 
-                        ? [venueId, date, options.excludeBookingId]
-                        : [venueId, date]
-                ) as { start_time: string; end_time: string; staff_member_id: number | null; party_size: number }[])
-                : (await conn.query(`
+                    AND status = 'confirmed'`;
+                const bookingParams: (string | number)[] = [venueId, date];
+                
+                if (options?.staffMemberId != null) {
+                    bookingQuery += ' AND staff_member_id = ?';
+                    bookingParams.push(options.staffMemberId);
+                }
+                
+                if (options?.excludeBookingId) {
+                    bookingQuery += ' AND id != ?';
+                    bookingParams.push(options.excludeBookingId);
+                }
+                
+                existingBookings = await conn.query(bookingQuery, bookingParams) as { start_time: string; end_time: string; staff_member_id: number | null; party_size: number }[];
+            } else {
+                let bookingQuery = `
                     SELECT start_time, end_time, staff_member_id, party_size
                     FROM bookings
                     WHERE venue_id = ?
                     AND service_id = ?
                     AND booking_date = ?
-                    AND status = 'confirmed'
-                    ${options?.excludeBookingId ? 'AND id != ?' : ''}`,
-                    options?.excludeBookingId 
-                        ? [venueId, serviceId, date, options.excludeBookingId]
-                        : [venueId, serviceId, date]
-                ) as { start_time: string; end_time: string; staff_member_id: number | null; party_size: number }[]);
+                    AND status = 'confirmed'`;
+                const bookingParams: (string | number)[] = [venueId, serviceId, date];
+                
+                if (options?.excludeBookingId) {
+                    bookingQuery += ' AND id != ?';
+                    bookingParams.push(options.excludeBookingId);
+                }
+                
+                existingBookings = await conn.query(bookingQuery, bookingParams) as { start_time: string; end_time: string; staff_member_id: number | null; party_size: number }[];
+            }
 
             // Markiere konfliktbehaften Slots als nicht verfügbar
             availableSlots = availableSlots.map(slot => {
@@ -714,6 +779,7 @@ export class AvailabilityService
             const bookingAdvanceHours = venueData[0]?.booking_advance_hours || 0;
 
             // Filter Slots basierend auf Mindestvorlaufzeit (booking_advance_hours)
+            const slotsCountBeforeAdvance = uniqueSlots.length;
             const now = new Date();
             uniqueSlots = uniqueSlots.filter(slot => {
                 const [hours, minutes] = slot.start_time.split(':').map(Number);
@@ -722,6 +788,7 @@ export class AvailabilityService
                 const hoursUntilSlot = (slotDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
                 return hoursUntilSlot >= bookingAdvanceHours;
             });
+            const withinAdvanceHours = hadOpeningHours && slotsCountBeforeAdvance > 0 && uniqueSlots.length === 0;
 
             // Optional: nur Slots im Zeitfenster (z.B. 18:00–20:00 für Suche "ca. 19:00")
             if (options?.timeWindowStart && options?.timeWindowEnd) {
@@ -746,11 +813,13 @@ export class AvailabilityService
             */
            logger.info(`${available_slots} Available (${total_slots} total) slots fetched successfully`);
 
-            // Return Day-Availability
+            // Return Day-Availability (is_closed: true wenn an dem Tag keine Öffnungszeiten)
             return {
                 date: date,
                 day_of_week: dayOfWeek,
-                time_slots: uniqueSlots
+                time_slots: uniqueSlots,
+                is_closed: !hadOpeningHours,
+                ...(withinAdvanceHours && { within_advance_hours: true, booking_advance_hours: bookingAdvanceHours })
             };
         }
         catch (error)
@@ -931,11 +1000,13 @@ export class AvailabilityService
 
     /**
      * Hole Wochen-Verfügbarkeit für einen Service
+     * options: staffMemberId, partySize – werden an getAvailableSlots pro Tag weitergegeben
      */
     static async getWeekAvailability(
-        venueId: number,            // ID des Geschäfts
-        serviceId: number,          // ID des Services
-        startDate: string           // Startdatum der Woche
+        venueId: number,
+        serviceId: number,
+        startDate: string,
+        options?: { staffMemberId?: number; partySize?: number }
     ): Promise<DayAvailability[]>
     {
         logger.info('Fetching week availability...', {
@@ -962,34 +1033,33 @@ export class AvailabilityService
             const start = new Date(startDate);
 
 
-            // Hole Verfügbarkeit für 7 Tage
+            // Hole Verfügbarkeit für 7 Tage (Datum in Lokalzeit, damit Sonntag nicht als Samstag angefragt wird)
             for (let i = 0; i < 7; i++)
             {
-                // Erstelle neues Date-Objekt für aktuellen Tag
                 const currentDate = new Date(start);
-
-                // Addiere Tage
                 currentDate.setDate(start.getDate() + i);
 
-                // Konvertiere zu String (YYYY-MM-DD)
-                const dateString = currentDate.toISOString().split('T')[0];
+                const y = currentDate.getFullYear();
+                const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const d = String(currentDate.getDate()).padStart(2, '0');
+                const dateString = `${y}-${m}-${d}`;
 
 
                 try 
                 {
-                    // Hole Verfügbarkeit für diesen Tag
-                    const dayAvailability = await this.getAvailableSlots(venueId, serviceId, dateString);
+                    const dayAvailability = await this.getAvailableSlots(venueId, serviceId, dateString, options);
                     weekAvailability.push(dayAvailability);    
                 } 
                 catch (error) 
                 {
                     logger.error(`Error getting availability for ${dateString}: `, error);
 
-                    // Füge leeren Tag bei Fehler hinzu
+                    // Füge leeren Tag bei Fehler hinzu (als geschlossen anzeigen)
                     weekAvailability.push({
                         date: dateString,
                         day_of_week: currentDate.getDay(),
-                        time_slots: []
+                        time_slots: [],
+                        is_closed: true
                     });
                 }
             }
@@ -1009,7 +1079,285 @@ export class AvailabilityService
         }
     }
 
-    
+    /** Max. Tage für Range-Abfrage (z. B. 84 = 12 Wochen) */
+    private static readonly AVAILABILITY_RANGE_MAX_DAYS = 84;
+
+    /**
+     * Hole Verfügbarkeit für einen kompletten Datumsbereich in einem Aufruf (weniger HTTP- und DB-Roundtrips).
+     * options: staffMemberId, partySize – wie bei getAvailableSlots.
+     */
+    static async getAvailabilityRange(
+        venueId: number,
+        serviceId: number,
+        startDate: string,
+        endDate: string,
+        options?: { staffMemberId?: number; partySize?: number }
+    ): Promise<DayAvailability[]>
+    {
+        const partySize = options?.partySize ?? 1;
+        logger.info('Fetching availability range...', {
+            venue_id: venueId,
+            service_id: serviceId,
+            start_date: startDate,
+            end_date: endDate,
+            partySize
+        });
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+            throw new Error('Invalid startDate or endDate');
+        }
+        const totalDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+        if (totalDays > this.AVAILABILITY_RANGE_MAX_DAYS) {
+            throw new Error(`Date range must not exceed ${this.AVAILABILITY_RANGE_MAX_DAYS} days`);
+        }
+
+        let conn;
+        try
+        {
+            conn = await getConnection();
+
+            const venueCheck = await conn.query(`
+                SELECT id FROM venues WHERE id = ? AND is_active = true`,
+                [venueId]
+            ) as { id: number }[];
+            if (venueCheck.length === 0) throw new Error('Venue not found or inactive');
+
+            const services = await conn.query(`
+                SELECT id, duration_minutes, requires_staff, capacity
+                FROM services
+                WHERE id = ? AND venue_id = ? AND is_active = true`,
+                [serviceId, venueId]
+            ) as Service[];
+            if (services.length === 0) throw new Error('Service not found');
+            const service = services[0];
+
+            const venueData = await conn.query(`
+                SELECT booking_advance_hours FROM venues WHERE id = ?`,
+                [venueId]
+            ) as { booking_advance_hours: number | null }[];
+            const bookingAdvanceHours = venueData[0]?.booking_advance_hours ?? 0;
+
+            type RuleRow = { day_of_week: number; start_time: string; end_time: string; staff_member_id?: number };
+            type BookingRow = { booking_date: string; start_time: string; end_time: string; staff_member_id: number | null; party_size: number };
+
+            let staffIds: number[] = [];
+            let rulesByStaffAndDay: Map<number, Map<number, { start_time: string; end_time: string }[]>> = new Map();
+            let venueRulesByDay: Map<number, { start_time: string; end_time: string }[]> = new Map();
+
+            if (service.requires_staff)
+            {
+                let staffRows = await conn.query(`
+                    SELECT sm.id as staff_id FROM staff_services ss
+                    JOIN staff_members sm ON ss.staff_member_id = sm.id
+                    WHERE ss.service_id = ? AND sm.is_active = true`,
+                    [serviceId]
+                ) as { staff_id: number }[];
+                if (options?.staffMemberId != null) {
+                    staffRows = staffRows.filter((r) => r.staff_id === options.staffMemberId);
+                }
+                staffIds = staffRows.map((r) => r.staff_id);
+                if (staffIds.length === 0) {
+                    const emptyDays = this.buildDateList(startDate, endDate).map(({ dateStr, dayOfWeek }) => ({
+                        date: dateStr,
+                        day_of_week: dayOfWeek,
+                        time_slots: [],
+                        is_closed: true
+                    }));
+                    return emptyDays;
+                }
+                const rules = await conn.query(`
+                    SELECT staff_member_id, day_of_week, start_time, end_time
+                    FROM availability_rules
+                    WHERE staff_member_id IN (?) AND is_active = true`,
+                    [staffIds]
+                ) as RuleRow[];
+                for (const r of rules) {
+                    const sid = r.staff_member_id!;
+                    if (!rulesByStaffAndDay.has(sid)) rulesByStaffAndDay.set(sid, new Map());
+                    const byDay = rulesByStaffAndDay.get(sid)!;
+                    if (!byDay.has(r.day_of_week)) byDay.set(r.day_of_week, []);
+                    byDay.get(r.day_of_week)!.push({ start_time: r.start_time, end_time: r.end_time });
+                }
+            }
+            else
+            {
+                const rules = await conn.query(`
+                    SELECT day_of_week, start_time, end_time
+                    FROM availability_rules
+                    WHERE venue_id = ? AND is_active = true`,
+                    [venueId]
+                ) as RuleRow[];
+                for (const r of rules) {
+                    if (!venueRulesByDay.has(r.day_of_week)) venueRulesByDay.set(r.day_of_week, []);
+                    venueRulesByDay.get(r.day_of_week)!.push({ start_time: r.start_time, end_time: r.end_time });
+                }
+            }
+
+            let bookingsQuery: string;
+            let bookingsParams: (string | number)[];
+            
+            if (service.requires_staff) {
+                bookingsQuery = `SELECT booking_date, start_time, end_time, staff_member_id, party_size FROM bookings
+                   WHERE venue_id = ? AND booking_date >= ? AND booking_date <= ? AND staff_member_id IS NOT NULL AND status = 'confirmed'`;
+                bookingsParams = [venueId, startDate, endDate];
+                
+                if (options?.staffMemberId != null) {
+                    bookingsQuery += ' AND staff_member_id = ?';
+                    bookingsParams.push(options.staffMemberId);
+                }
+            } else {
+                bookingsQuery = `SELECT booking_date, start_time, end_time, staff_member_id, party_size FROM bookings
+                   WHERE venue_id = ? AND service_id = ? AND booking_date >= ? AND booking_date <= ? AND status = 'confirmed'`;
+                bookingsParams = [venueId, serviceId, startDate, endDate];
+            }
+            
+            const bookings = await conn.query(bookingsQuery, bookingsParams) as BookingRow[];
+            logger.debug(`Loaded ${bookings.length} bookings for date range`, {
+                query_includes_staff_filter: options?.staffMemberId != null,
+                staff_member_id: options?.staffMemberId,
+                booking_count: bookings.length
+            });
+            const bookingsByDate: Record<string, BookingRow[]> = {};
+            for (const b of bookings) {
+                if (!bookingsByDate[b.booking_date]) bookingsByDate[b.booking_date] = [];
+                bookingsByDate[b.booking_date].push(b);
+            }
+
+            const dateList = this.buildDateList(startDate, endDate);
+            const result: DayAvailability[] = [];
+
+            for (const { dateStr, dayOfWeek } of dateList)
+            {
+                let availableSlots: TimeSlot[] = [];
+                if (service.requires_staff)
+                {
+                    for (const staffId of staffIds)
+                    {
+                        const byDay = rulesByStaffAndDay.get(staffId)?.get(dayOfWeek);
+                        if (!byDay) continue;
+                        for (const rule of byDay)
+                        {
+                            const staffSlots = this.generateTimeSlots(rule.start_time, rule.end_time, service.duration_minutes);
+                            availableSlots.push(...staffSlots.map(s => ({ ...s, staff_member_id: staffId })));
+                        }
+                    }
+                }
+                else
+                {
+                    const dayRules = venueRulesByDay.get(dayOfWeek) ?? [];
+                    for (const rule of dayRules)
+                    {
+                        availableSlots.push(...this.generateTimeSlots(rule.start_time, rule.end_time, service.duration_minutes));
+                    }
+                }
+
+                const hadOpeningHours = availableSlots.length > 0;
+                const existingBookings = bookingsByDate[dateStr] ?? [];
+
+                if (dateStr === '2026-02-23' && existingBookings.length > 0) {
+                    logger.debug(`Processing ${dateStr} with ${existingBookings.length} bookings`, {
+                        bookings: existingBookings,
+                        slot_count: availableSlots.length,
+                        requires_staff: service.requires_staff
+                    });
+                }
+
+                availableSlots = availableSlots.map(slot => {
+                    let totalOccupancy = 0;
+                    let slotMarkedUnavailable = false;
+                    for (const booking of existingBookings)
+                    {
+                        const overlaps = this.timeSlotsOverlap(slot.start_time, slot.end_time, booking.start_time, booking.end_time);
+                        if (!overlaps) continue;
+                        
+                        if (service.requires_staff)
+                        {
+                            if (slot.staff_member_id === booking.staff_member_id) {
+                                slotMarkedUnavailable = true;
+                                return { ...slot, available: false };
+                            }
+                        }
+                        else
+                            totalOccupancy += booking.party_size;
+                    }
+                    if (!service.requires_staff)
+                    {
+                        const remainingCapacity = service.capacity - totalOccupancy;
+                        return {
+                            ...slot,
+                            available: remainingCapacity >= partySize,
+                            remaining_capacity: Math.max(0, remainingCapacity)
+                        };
+                    }
+                    return slot;
+                });
+
+                availableSlots.sort((a, b) => this.timeStringToMinutes(a.start_time) - this.timeStringToMinutes(b.start_time));
+                let uniqueSlots = availableSlots.filter((slot, index, array) =>
+                    index === array.findIndex(s =>
+                        s.start_time === slot.start_time && s.end_time === slot.end_time && s.staff_member_id === slot.staff_member_id
+                    )
+                );
+
+                const slotsCountBeforeAdvance = uniqueSlots.length;
+                const now = new Date();
+                uniqueSlots = uniqueSlots.filter(slot => {
+                    const [hours, minutes] = slot.start_time.split(':').map(Number);
+                    const slotDateTime = new Date(dateStr);
+                    slotDateTime.setHours(hours, minutes, 0, 0);
+                    const hoursUntilSlot = (slotDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+                    return hoursUntilSlot >= bookingAdvanceHours;
+                });
+                const withinAdvanceHours = hadOpeningHours && slotsCountBeforeAdvance > 0 && uniqueSlots.length === 0;
+
+                result.push({
+                    date: dateStr,
+                    day_of_week: dayOfWeek,
+                    time_slots: uniqueSlots,
+                    is_closed: !hadOpeningHours,
+                    ...(withinAdvanceHours && { within_advance_hours: true, booking_advance_hours: bookingAdvanceHours })
+                });
+            }
+
+            logger.info('Availability range fetched successfully', {
+                total_days: result.length,
+                days_with_slots: result.filter(d => d.time_slots.length > 0).length
+            });
+            return result;
+        }
+        catch (error)
+        {
+            logger.error('Error fetching availability range', error);
+            throw error;
+        }
+        finally
+        {
+            if (conn) {
+                conn.release();
+                logger.debug('Database connection released');
+            }
+        }
+    }
+
+    private static buildDateList(startDate: string, endDate: string): { dateStr: string; dayOfWeek: number }[]
+    {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const list: { dateStr: string; dayOfWeek: number }[] = [];
+        const cur = new Date(start);
+        while (cur <= end)
+        {
+            const y = cur.getFullYear();
+            const m = String(cur.getMonth() + 1).padStart(2, '0');
+            const d = String(cur.getDate()).padStart(2, '0');
+            list.push({ dateStr: `${y}-${m}-${d}`, dayOfWeek: cur.getDay() });
+            cur.setDate(cur.getDate() + 1);
+        }
+        return list;
+    }
+
     /**
      * Validiere Buchungsanfrage gegen Verfügbarkeit
      */

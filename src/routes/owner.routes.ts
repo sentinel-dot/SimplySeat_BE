@@ -5,6 +5,8 @@ import { getAuditLogForBooking } from '../services/audit.service';
 import { BookingService } from '../services/booking.service';
 import { VenueService } from '../services/venue.service';
 import { createLogger } from '../config/utils/logger';
+import { parsePositiveId } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
 import { CreateBookingData } from '../config/utils/types';
 
 const router = Router();
@@ -41,7 +43,7 @@ router.get('/bookings', async (req: Request, res: Response) => {
         res.json({ success: true, data: result.bookings, pagination: { total: result.total, limit: filters.limit, offset: filters.offset } });
     } catch (error) {
         logger.error('Error fetching owner bookings', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Buchungen' });
+        sendError(res, 500, 'Fehler beim Laden der Buchungen', error);
     }
 });
 
@@ -51,8 +53,8 @@ router.get('/bookings/:id', async (req: Request, res: Response) => {
         res.status(403).json({ success: false, message: 'Kein Venue zugewiesen' });
         return;
     }
-    const bookingId = parseInt(req.params.id);
-    if (Number.isNaN(bookingId)) {
+    const bookingId = parsePositiveId(req.params.id);
+    if (bookingId === null) {
         res.status(400).json({ success: false, message: 'Ungültige Buchungs-ID' });
         return;
     }
@@ -65,7 +67,7 @@ router.get('/bookings/:id', async (req: Request, res: Response) => {
         res.json({ success: true, data: booking });
     } catch (error) {
         logger.error('Error fetching booking', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Buchung' });
+        sendError(res, 500, 'Fehler beim Laden der Buchung', error);
     }
 });
 
@@ -75,8 +77,8 @@ router.get('/bookings/:id/audit', async (req: Request, res: Response) => {
         res.status(403).json({ success: false, message: 'Kein Venue zugewiesen' });
         return;
     }
-    const bookingId = parseInt(req.params.id);
-    if (Number.isNaN(bookingId)) {
+    const bookingId = parsePositiveId(req.params.id);
+    if (bookingId === null) {
         res.status(400).json({ success: false, message: 'Ungültige Buchungs-ID' });
         return;
     }
@@ -90,13 +92,17 @@ router.get('/bookings/:id/audit', async (req: Request, res: Response) => {
         res.json({ success: true, data: entries });
     } catch (error) {
         logger.error('Error fetching booking audit log', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden des Verlaufs' });
+        sendError(res, 500, 'Fehler beim Laden des Verlaufs', error);
     }
 });
 
 router.patch('/bookings/:id/status', async (req: Request, res: Response) => {
     const venueId = getVenueId(req);
-    const bookingId = parseInt(req.params.id);
+    const bookingId = parsePositiveId(req.params.id);
+    if (bookingId === null) {
+        res.status(400).json({ success: false, message: 'Ungültige Buchungs-ID' });
+        return;
+    }
     const { status, reason } = req.body;
     if (!status) {
         res.status(400).json({ success: false, message: 'Status ist erforderlich' });
@@ -117,7 +123,7 @@ router.patch('/bookings/:id/status', async (req: Request, res: Response) => {
         else if (msg === 'Kein Zugriff auf diese Buchung') res.status(403).json({ success: false, message: msg });
         else if (msg === 'Grund ist erforderlich') res.status(400).json({ success: false, message: 'Grund ist erforderlich' });
         else if (msg.startsWith('Für vergangene Buchungen') || msg.startsWith('Ein zukünftiger Termin')) res.status(400).json({ success: false, message: msg });
-        else res.status(500).json({ success: false, message: 'Fehler beim Aktualisieren des Status' });
+        else sendError(res, 500, 'Fehler beim Aktualisieren des Status', error);
     }
 });
 
@@ -132,7 +138,7 @@ router.get('/stats', async (req: Request, res: Response) => {
         res.json({ success: true, data: stats });
     } catch (error) {
         logger.error('Error fetching owner stats', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Statistiken' });
+        sendError(res, 500, 'Fehler beim Laden der Statistiken', error);
     }
 });
 
@@ -147,7 +153,7 @@ router.get('/services', async (req: Request, res: Response) => {
         res.json({ success: true, data: services });
     } catch (error) {
         logger.error('Error fetching services', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Services' });
+        sendError(res, 500, 'Fehler beim Laden der Services', error);
     }
 });
 
@@ -157,7 +163,11 @@ router.patch('/services/:id', async (req: Request, res: Response) => {
         res.status(403).json({ success: false, message: 'Kein Venue zugewiesen' });
         return;
     }
-    const serviceId = parseInt(req.params.id);
+    const serviceId = parsePositiveId(req.params.id);
+    if (serviceId === null) {
+        res.status(400).json({ success: false, message: 'Ungültige Service-ID' });
+        return;
+    }
     const { name, description, duration_minutes: rawDuration, price: rawPrice, is_active } = req.body;
     const duration_minutes = rawDuration !== undefined && rawDuration !== null ? (typeof rawDuration === 'number' ? rawDuration : Number(rawDuration)) : undefined;
     const price = rawPrice !== undefined && rawPrice !== null ? (typeof rawPrice === 'number' ? rawPrice : Number(rawPrice)) : undefined;
@@ -176,7 +186,7 @@ router.patch('/services/:id', async (req: Request, res: Response) => {
         const msg = (error as Error).message;
         if (msg === 'Service not found') res.status(404).json({ success: false, message: 'Service nicht gefunden' });
         else if (msg === 'Kein Zugriff auf diesen Service') res.status(403).json({ success: false, message: msg });
-        else res.status(500).json({ success: false, message: 'Fehler beim Aktualisieren des Services' });
+        else sendError(res, 500, 'Fehler beim Aktualisieren des Services', error);
     }
 });
 
@@ -191,7 +201,7 @@ router.get('/availability', async (req: Request, res: Response) => {
         res.json({ success: true, data: rules });
     } catch (error) {
         logger.error('Error fetching availability rules', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Verfügbarkeiten' });
+        sendError(res, 500, 'Fehler beim Laden der Verfügbarkeiten', error);
     }
 });
 
@@ -201,7 +211,11 @@ router.patch('/availability/:id', async (req: Request, res: Response) => {
         res.status(403).json({ success: false, message: 'Kein Venue zugewiesen' });
         return;
     }
-    const ruleId = parseInt(req.params.id);
+    const ruleId = parsePositiveId(req.params.id);
+    if (ruleId === null) {
+        res.status(400).json({ success: false, message: 'Ungültige Regel-ID' });
+        return;
+    }
     const { start_time, end_time, is_active } = req.body;
     try {
         await OwnerService.updateAvailabilityRule(ruleId, { start_time, end_time, is_active }, venueId);
@@ -210,7 +224,7 @@ router.patch('/availability/:id', async (req: Request, res: Response) => {
         const msg = (error as Error).message;
         if (msg === 'Verfügbarkeitsregel nicht gefunden') res.status(404).json({ success: false, message: msg });
         else if (msg === 'Kein Zugriff auf diese Verfügbarkeitsregel') res.status(403).json({ success: false, message: msg });
-        else res.status(500).json({ success: false, message: 'Fehler beim Aktualisieren der Verfügbarkeit' });
+        else sendError(res, 500, 'Fehler beim Aktualisieren der Verfügbarkeit', error);
     }
 });
 
@@ -249,7 +263,7 @@ router.post('/bookings', async (req: Request, res: Response) => {
     } catch (error) {
         const msg = (error as Error).message || '';
         if (msg.includes('not available')) res.status(400).json({ success: false, message: 'Zeitslot nicht verfügbar' });
-        else res.status(500).json({ success: false, message: 'Fehler beim Erstellen der Buchung' });
+        else sendError(res, 500, 'Fehler beim Erstellen der Buchung', error);
     }
 });
 
@@ -268,7 +282,7 @@ router.get('/venue/settings', async (req: Request, res: Response) => {
         res.json({ success: true, data: venue });
     } catch (error) {
         logger.error('Error fetching venue settings', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Einstellungen' });
+        sendError(res, 500, 'Fehler beim Laden der Einstellungen', error);
     }
 });
 
@@ -278,15 +292,26 @@ router.patch('/venue/settings', async (req: Request, res: Response) => {
         res.status(403).json({ success: false, message: 'Kein Venue zugewiesen' });
         return;
     }
-    const { booking_advance_hours: rawAdvance, cancellation_hours: rawCancel, image_url } = req.body;
+    const { booking_advance_days: rawAdvanceDays, booking_advance_hours: rawAdvance, cancellation_hours: rawCancel, image_url } = req.body;
     const parseNonNegative = (v: unknown): number | undefined => {
         if (v === undefined || v === null) return undefined;
         const n = typeof v === 'number' ? v : Number(v);
         return (Number.isNaN(n) || n < 0) ? undefined : n;
     };
+    const parsePositiveInt = (v: unknown): number | undefined => {
+        if (v === undefined || v === null) return undefined;
+        const n = typeof v === 'number' ? v : Number(v);
+        const i = Math.floor(n);
+        return (Number.isNaN(i) || i < 1) ? undefined : i;
+    };
+    const booking_advance_days = parsePositiveInt(rawAdvanceDays);
     const booking_advance_hours = parseNonNegative(rawAdvance);
     const cancellation_hours = parseNonNegative(rawCancel);
     const imageUrl = image_url === undefined ? undefined : (typeof image_url === 'string' ? image_url : image_url === null ? null : undefined);
+    if (rawAdvanceDays !== undefined && rawAdvanceDays !== null && booking_advance_days === undefined) {
+        res.status(400).json({ success: false, message: 'booking_advance_days muss mindestens 1 sein' });
+        return;
+    }
     if (rawAdvance !== undefined && rawAdvance !== null && booking_advance_hours === undefined) {
         res.status(400).json({ success: false, message: 'booking_advance_hours muss eine positive Zahl sein' });
         return;
@@ -296,10 +321,10 @@ router.patch('/venue/settings', async (req: Request, res: Response) => {
         return;
     }
     try {
-        await OwnerService.updateVenueSettings(venueId, { booking_advance_hours, cancellation_hours, image_url: imageUrl });
+        await OwnerService.updateVenueSettings(venueId, { booking_advance_days, booking_advance_hours, cancellation_hours, image_url: imageUrl });
         res.json({ success: true, message: 'Einstellungen erfolgreich aktualisiert' });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Fehler beim Aktualisieren der Einstellungen' });
+        sendError(res, 500, 'Fehler beim Aktualisieren der Einstellungen', error);
     }
 });
 

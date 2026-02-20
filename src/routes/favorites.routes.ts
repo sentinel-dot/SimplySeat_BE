@@ -8,6 +8,8 @@ import {
     getFavoriteCount
 } from '../services/favorites.service';
 import { createLogger } from '../config/utils/logger';
+import { parsePositiveId } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
 
 const router = Router();
 const logger = createLogger('favorites.routes');
@@ -33,10 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in get favorites route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -54,9 +53,8 @@ router.get('/:venueId/check', async (req: Request, res: Response) => {
             return;
         }
 
-        const venueId = parseInt(req.params.venueId, 10);
-        
-        if (isNaN(venueId)) {
+        const venueId = parsePositiveId(req.params.venueId);
+        if (venueId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Venue-ID'
@@ -72,10 +70,7 @@ router.get('/:venueId/check', async (req: Request, res: Response) => {
         });
     } catch (error) {
         logger.error('Error in check favorite route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -93,9 +88,8 @@ router.post('/:venueId', async (req: Request, res: Response) => {
             return;
         }
 
-        const venueId = parseInt(req.params.venueId, 10);
-        
-        if (isNaN(venueId)) {
+        const venueId = parsePositiveId(req.params.venueId);
+        if (venueId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Venue-ID'
@@ -108,10 +102,7 @@ router.post('/:venueId', async (req: Request, res: Response) => {
         res.status(result.success ? 201 : 400).json(result);
     } catch (error) {
         logger.error('Error in add favorite route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -129,9 +120,8 @@ router.delete('/:venueId', async (req: Request, res: Response) => {
             return;
         }
 
-        const venueId = parseInt(req.params.venueId, 10);
-        
-        if (isNaN(venueId)) {
+        const venueId = parsePositiveId(req.params.venueId);
+        if (venueId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Venue-ID'
@@ -144,10 +134,7 @@ router.delete('/:venueId', async (req: Request, res: Response) => {
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in remove favorite route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 

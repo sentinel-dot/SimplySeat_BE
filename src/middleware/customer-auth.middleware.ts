@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, findCustomerById, toPublicCustomer } from '../services/customer-auth.service';
+import { sendError } from '../config/utils/response';
 import { createLogger } from '../config/utils/logger';
 import { CustomerJwtPayload, CustomerPublic } from '../config/utils/types';
 
@@ -100,10 +101,7 @@ export async function requireCustomerAuth(req: Request, res: Response, next: Nex
         next();
     } catch (error) {
         logger.error('Error loading customer in middleware', error);
-        res.status(500).json({
-            success: false,
-            message: 'Interner Serverfehler'
-        });
+        sendError(res, 500, 'Interner Serverfehler', error);
     }
 }
 

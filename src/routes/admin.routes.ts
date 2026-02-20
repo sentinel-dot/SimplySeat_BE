@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import { authenticateAndLoadUser, requireSystemAdmin } from '../middleware/auth.middleware';
 import { AdminService } from '../services/admin.service';
 import { createLogger } from '../config/utils/logger';
+import { parsePositiveId } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
+import { sanitizeForJson } from '../config/utils/helper';
 import { getPointsConfig, updatePointsConfig } from '../services/loyalty.service';
 
 const router = Router();
@@ -13,26 +16,26 @@ router.use(requireSystemAdmin);
 router.get('/stats', async (req: Request, res: Response) => {
     try {
         const stats = await AdminService.getGlobalStats();
-        res.json({ success: true, data: stats });
+        res.json({ success: true, data: sanitizeForJson(stats) });
     } catch (error) {
         logger.error('Error fetching admin stats', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Statistiken' });
+        sendError(res, 500, 'Fehler beim Laden der Statistiken', error);
     }
 });
 
 router.get('/venues', async (req: Request, res: Response) => {
     try {
         const venues = await AdminService.listVenues();
-        res.json({ success: true, data: venues });
+        res.json({ success: true, data: sanitizeForJson(venues) });
     } catch (error) {
         logger.error('Error listing venues', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Venues' });
+        sendError(res, 500, 'Fehler beim Laden der Venues', error);
     }
 });
 
 router.get('/venues/:id', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Venue-ID' });
         return;
     }
@@ -42,10 +45,30 @@ router.get('/venues/:id', async (req: Request, res: Response) => {
             res.status(404).json({ success: false, message: 'Venue nicht gefunden' });
             return;
         }
-        res.json({ success: true, data: venue });
+        res.json({ success: true, data: sanitizeForJson(venue) });
     } catch (error) {
         logger.error('Error fetching venue', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Venue' });
+        sendError(res, 500, 'Fehler beim Laden der Venue', error);
+    }
+});
+
+router.post('/venues/full', async (req: Request, res: Response) => {
+    const body = req.body as Parameters<typeof AdminService.createVenueFull>[0];
+    if (!body?.venue || !body?.owner) {
+        res.status(400).json({ success: false, message: 'venue und owner sind erforderlich' });
+        return;
+    }
+    try {
+        const result = await AdminService.createVenueFull(body);
+        res.status(201).json({ success: true, data: sanitizeForJson(result), message: 'Venue inkl. Owner, Staff, Services und Öffnungszeiten erstellt' });
+    } catch (error) {
+        const msg = (error as Error).message;
+        if (msg.includes('erforderlich') || msg.includes('E-Mail wird bereits') || msg.includes('Passwort') || msg.includes('Mitarbeiter') || msg.includes('Service')) {
+            res.status(400).json({ success: false, message: msg });
+        } else {
+            logger.error('Error creating venue full', error);
+            sendError(res, 500, msg || 'Fehler beim Erstellen der Venue', error);
+        }
     }
 });
 
@@ -65,16 +88,16 @@ router.post('/venues', async (req: Request, res: Response) => {
             name, type, email, phone, address, city, postal_code, country, description, website_url,
             booking_advance_days, booking_advance_hours, cancellation_hours, require_phone, require_deposit, deposit_amount, is_active,
         });
-        res.status(201).json({ success: true, data: venue, message: 'Venue erstellt' });
+        res.status(201).json({ success: true, data: sanitizeForJson(venue), message: 'Venue erstellt' });
     } catch (error) {
         logger.error('Error creating venue', error);
-        res.status(500).json({ success: false, message: (error as Error).message || 'Fehler beim Erstellen der Venue' });
+        sendError(res, 500, (error as Error).message || 'Fehler beim Erstellen der Venue', error);
     }
 });
 
 router.patch('/venues/:id', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Venue-ID' });
         return;
     }
@@ -88,10 +111,10 @@ router.patch('/venues/:id', async (req: Request, res: Response) => {
     }
     try {
         const venue = await AdminService.updateVenue(id, body);
-        res.json({ success: true, data: venue, message: 'Venue aktualisiert' });
+        res.json({ success: true, data: sanitizeForJson(venue), message: 'Venue aktualisiert' });
     } catch (error) {
         if ((error as Error).message === 'Venue not found') res.status(404).json({ success: false, message: 'Venue nicht gefunden' });
-        else res.status(500).json({ success: false, message: (error as Error).message || 'Fehler beim Aktualisieren' });
+        else sendError(res, 500, (error as Error).message || 'Fehler beim Aktualisieren', error);
     }
 });
 
@@ -101,7 +124,7 @@ router.get('/users', async (req: Request, res: Response) => {
         res.json({ success: true, data: admins });
     } catch (error) {
         logger.error('Error listing admins', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Admins' });
+        sendError(res, 500, 'Fehler beim Laden der Admins', error);
     }
 });
 
@@ -121,23 +144,24 @@ router.post('/users', async (req: Request, res: Response) => {
     } catch (error) {
         const msg = (error as Error).message;
         if (msg === 'E-Mail wird bereits verwendet' || msg.includes('Passwort')) res.status(400).json({ success: false, message: msg });
-        else res.status(500).json({ success: false, message: msg || 'Fehler beim Erstellen' });
+        else sendError(res, 500, msg || 'Fehler beim Erstellen', error);
     }
 });
 
 router.patch('/users/:id', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Admin-ID' });
         return;
     }
-    const { venue_id, role, is_active, name } = req.body;
+    const { venue_id, role, is_active, name, email } = req.body;
     const allowedRoles = ['owner', 'staff'] as const;
-    const updates: { venue_id?: number | null; role?: 'owner' | 'staff'; is_active?: boolean; name?: string } = {};
+    const updates: { venue_id?: number | null; role?: 'owner' | 'staff'; is_active?: boolean; name?: string; email?: string } = {};
     if (venue_id !== undefined) updates.venue_id = venue_id === null || venue_id === '' ? null : parseInt(String(venue_id), 10);
     if (role !== undefined && allowedRoles.includes(role)) updates.role = role;
     if (is_active !== undefined) updates.is_active = Boolean(is_active);
     if (name !== undefined) updates.name = String(name).trim() || undefined;
+    if (email !== undefined) updates.email = String(email).trim() || undefined;
     if (Object.keys(updates).length === 0) {
         res.status(400).json({ success: false, message: 'Keine gültigen Felder zum Aktualisieren' });
         return;
@@ -147,13 +171,13 @@ router.patch('/users/:id', async (req: Request, res: Response) => {
         res.json({ success: true, data: admin, message: 'Benutzer aktualisiert' });
     } catch (error) {
         if ((error as Error).message === 'Admin nicht gefunden') res.status(404).json({ success: false, message: 'Admin nicht gefunden' });
-        else res.status(500).json({ success: false, message: (error as Error).message || 'Fehler beim Aktualisieren' });
+        else sendError(res, 500, (error as Error).message || 'Fehler beim Aktualisieren', error);
     }
 });
 
 router.patch('/users/:id/password', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Admin-ID' });
         return;
     }
@@ -172,7 +196,7 @@ router.patch('/users/:id/password', async (req: Request, res: Response) => {
     } catch (error) {
         const msg = (error as Error).message;
         if (msg.includes('Passwort') || msg === 'Admin nicht gefunden') res.status(400).json({ success: false, message: msg });
-        else res.status(500).json({ success: false, message: 'Fehler beim Setzen des Passworts' });
+        else sendError(res, 500, 'Fehler beim Setzen des Passworts', error);
     }
 });
 
@@ -189,13 +213,13 @@ router.get('/customers', async (req: Request, res: Response) => {
         res.json({ success: true, data: result.customers, total: result.total });
     } catch (error) {
         logger.error('Error listing customers', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Kunden' });
+        sendError(res, 500, 'Fehler beim Laden der Kunden', error);
     }
 });
 
 router.get('/customers/:id', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Kunden-ID' });
         return;
     }
@@ -208,13 +232,13 @@ router.get('/customers/:id', async (req: Request, res: Response) => {
         res.json({ success: true, data: customer });
     } catch (error) {
         logger.error('Error fetching customer', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden des Kunden' });
+        sendError(res, 500, 'Fehler beim Laden des Kunden', error);
     }
 });
 
 router.patch('/customers/:id', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Kunden-ID' });
         return;
     }
@@ -239,14 +263,14 @@ router.patch('/customers/:id', async (req: Request, res: Response) => {
         if ((error as Error).message === 'Kunde nicht gefunden') {
             res.status(404).json({ success: false, message: 'Kunde nicht gefunden' });
         } else {
-            res.status(500).json({ success: false, message: (error as Error).message || 'Fehler beim Aktualisieren' });
+            sendError(res, 500, (error as Error).message || 'Fehler beim Aktualisieren', error);
         }
     }
 });
 
 router.patch('/customers/:id/password', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Kunden-ID' });
         return;
     }
@@ -269,14 +293,14 @@ router.patch('/customers/:id/password', async (req: Request, res: Response) => {
         if (msg.includes('Passwort') || msg === 'Kunde nicht gefunden') {
             res.status(400).json({ success: false, message: msg });
         } else {
-            res.status(500).json({ success: false, message: 'Fehler beim Setzen des Passworts' });
+            sendError(res, 500, 'Fehler beim Setzen des Passworts', error);
         }
     }
 });
 
 router.post('/customers/:id/loyalty-points', async (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         res.status(400).json({ success: false, message: 'Ungültige Kunden-ID' });
         return;
     }
@@ -305,7 +329,7 @@ router.post('/customers/:id/loyalty-points', async (req: Request, res: Response)
         if (msg === 'Kunde nicht gefunden' || msg.includes('negativ')) {
             res.status(400).json({ success: false, message: msg });
         } else {
-            res.status(500).json({ success: false, message: 'Fehler beim Anpassen der Bonuspunkte' });
+            sendError(res, 500, 'Fehler beim Anpassen der Bonuspunkte', error);
         }
     }
 });
@@ -318,7 +342,7 @@ router.get('/loyalty/config', async (req: Request, res: Response) => {
         res.json({ success: true, data: config });
     } catch (error) {
         logger.error('Error getting loyalty config', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Laden der Konfiguration' });
+        sendError(res, 500, 'Fehler beim Laden der Konfiguration', error);
     }
 });
 
@@ -347,7 +371,7 @@ router.patch('/loyalty/config', async (req: Request, res: Response) => {
         }
     } catch (error) {
         logger.error('Error updating loyalty config', error);
-        res.status(500).json({ success: false, message: 'Fehler beim Aktualisieren der Konfiguration' });
+        sendError(res, 500, 'Fehler beim Aktualisieren der Konfiguration', error);
     }
 });
 

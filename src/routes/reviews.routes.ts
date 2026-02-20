@@ -11,6 +11,8 @@ import {
 } from '../services/reviews.service';
 import { createLogger } from '../config/utils/logger';
 import { awardPointsForReview } from '../services/loyalty.service';
+import { parsePositiveId } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
 
 const router = Router();
 const logger = createLogger('reviews.routes');
@@ -21,9 +23,8 @@ const logger = createLogger('reviews.routes');
  */
 router.get('/venues/:venueId/reviews', async (req: Request, res: Response) => {
     try {
-        const venueId = parseInt(req.params.venueId, 10);
-        
-        if (isNaN(venueId)) {
+        const venueId = parsePositiveId(req.params.venueId);
+        if (venueId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Venue-ID'
@@ -35,10 +36,7 @@ router.get('/venues/:venueId/reviews', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in get venue reviews route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -48,9 +46,8 @@ router.get('/venues/:venueId/reviews', async (req: Request, res: Response) => {
  */
 router.get('/venues/:venueId/reviews/rating', async (req: Request, res: Response) => {
     try {
-        const venueId = parseInt(req.params.venueId, 10);
-        
-        if (isNaN(venueId)) {
+        const venueId = parsePositiveId(req.params.venueId);
+        if (venueId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Venue-ID'
@@ -66,10 +63,7 @@ router.get('/venues/:venueId/reviews/rating', async (req: Request, res: Response
         });
     } catch (error) {
         logger.error('Error in get average rating route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -87,9 +81,8 @@ router.get('/venues/:venueId/reviews/can-review', requireCustomerAuth, async (re
             return;
         }
 
-        const venueId = parseInt(req.params.venueId, 10);
-        
-        if (isNaN(venueId)) {
+        const venueId = parsePositiveId(req.params.venueId);
+        if (venueId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Venue-ID'
@@ -105,10 +98,7 @@ router.get('/venues/:venueId/reviews/can-review', requireCustomerAuth, async (re
         });
     } catch (error) {
         logger.error('Error in can review route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -130,10 +120,7 @@ router.get('/customer/reviews', requireCustomerAuth, async (req: Request, res: R
         res.json(result);
     } catch (error) {
         logger.error('Error in get customer reviews route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -181,10 +168,7 @@ router.post('/customer/reviews', requireCustomerAuth, requireEmailVerified, asyn
         res.status(result.success ? 201 : 400).json(result);
     } catch (error) {
         logger.error('Error in create review route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -202,9 +186,8 @@ router.patch('/customer/reviews/:reviewId', requireCustomerAuth, requireEmailVer
             return;
         }
 
-        const reviewId = parseInt(req.params.reviewId, 10);
-        
-        if (isNaN(reviewId)) {
+        const reviewId = parsePositiveId(req.params.reviewId);
+        if (reviewId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Review-ID'
@@ -222,10 +205,7 @@ router.patch('/customer/reviews/:reviewId', requireCustomerAuth, requireEmailVer
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in update review route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -243,9 +223,8 @@ router.delete('/customer/reviews/:reviewId', requireCustomerAuth, async (req: Re
             return;
         }
 
-        const reviewId = parseInt(req.params.reviewId, 10);
-        
-        if (isNaN(reviewId)) {
+        const reviewId = parsePositiveId(req.params.reviewId);
+        if (reviewId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Review-ID'
@@ -258,10 +237,7 @@ router.delete('/customer/reviews/:reviewId', requireCustomerAuth, async (req: Re
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in delete review route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 

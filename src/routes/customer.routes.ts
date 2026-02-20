@@ -9,6 +9,8 @@ import {
 } from '../services/customer.service';
 import { BookingService } from '../services/booking.service';
 import { createLogger } from '../config/utils/logger';
+import { parsePositiveId } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
 
 const router = Router();
 const logger = createLogger('customer.routes');
@@ -34,10 +36,7 @@ router.get('/profile', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in get profile route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -61,10 +60,7 @@ router.patch('/profile', async (req: Request, res: Response) => {
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in update profile route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -92,10 +88,7 @@ router.delete('/profile', async (req: Request, res: Response) => {
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in delete account route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -117,10 +110,7 @@ router.get('/preferences', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in get preferences route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -144,10 +134,7 @@ router.patch('/preferences', async (req: Request, res: Response) => {
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in update preferences route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -177,10 +164,7 @@ router.get('/bookings', async (req: Request, res: Response) => {
         });
     } catch (error) {
         logger.error('Error in get bookings route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -198,9 +182,8 @@ router.post('/bookings/:id/quick-rebook', requireEmailVerified, async (req: Requ
             return;
         }
 
-        const bookingId = parseInt(req.params.id, 10);
-        
-        if (isNaN(bookingId)) {
+        const bookingId = parsePositiveId(req.params.id);
+        if (bookingId === null) {
             res.status(400).json({
                 success: false,
                 message: 'Ungültige Buchungs-ID'
@@ -271,10 +254,7 @@ router.post('/bookings/:id/quick-rebook', requireEmailVerified, async (req: Requ
         });
     } catch (error) {
         logger.error('Error in quick rebook route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 

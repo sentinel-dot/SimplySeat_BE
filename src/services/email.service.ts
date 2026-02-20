@@ -454,6 +454,102 @@ export async function sendCancellation(booking: BookingForEmail): Promise<boolea
   });
 }
 
+/** E-Mail des Venue-Owners (users mit role=owner, venue_id, is_active=1). */
+export async function getOwnerEmailForVenue(venueId: number): Promise<string | null> {
+  const conn = await getConnection();
+  try {
+    const rows = await conn.query(
+      'SELECT email FROM users WHERE venue_id = ? AND role = ? AND is_active = 1 LIMIT 1',
+      [venueId, 'owner']
+    ) as { email: string }[];
+    return rows.length && rows[0].email ? rows[0].email : null;
+  } finally {
+    conn.release();
+  }
+}
+
+const ownerDashboardUrl = () => `${PUBLIC_APP_URL.replace(/\/$/, '')}/owner`;
+
+/**
+ * Mail an Owner: Neue Buchung eingegangen (Status pending).
+ */
+export async function sendNewBookingToOwner(booking: BookingForEmail, venueId: number): Promise<boolean> {
+  const ownerEmail = await getOwnerEmailForVenue(venueId);
+  if (!ownerEmail) return false;
+
+  const venueName = booking.venue_name || 'Ihr Betrieb';
+  const serviceName = booking.service_name || 'Buchung';
+  const subject = `Neue Buchung bei ${venueName}`;
+
+  const bodyContent = `
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Neue Buchung</h1>
+  <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Es ist eine neue Buchungsanfrage eingegangen. Bitte prüfen und bestätigen Sie diese im Dashboard.</p>
+  ${bookingDetailsBlock(booking)}
+  <p style="margin: 0 0 8px 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">Kunde</p>
+  <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.text};">${(booking.customer_name || '').replace(/</g, '&lt;')}</p>
+  ${notesBlock(booking).html}
+  <p style="margin: 24px 0 0 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">Im Dashboard können Sie die Buchung bestätigen oder ablehnen.</p>`;
+
+  const html = emailLayout({
+    title: 'Neue Buchung',
+    bodyContent,
+    cta: { text: 'Im Dashboard ansehen', url: ownerDashboardUrl() },
+    preheader: `Neue Buchung bei ${venueName}.`,
+  });
+
+  const notesT = notesBlock(booking).text;
+  const text = `Neue Buchung bei ${venueName}\n\n${serviceName}\n${formatDate(booking.booking_date)} · ${booking.start_time}–${booking.end_time} Uhr\nKunde: ${booking.customer_name}${notesT}\nDashboard: ${ownerDashboardUrl()}\n\nSimplySeat`;
+
+  return sendMail({
+    to: ownerEmail,
+    subject,
+    html,
+    text,
+    bookingId: booking.id,
+    type: 'owner_new_booking',
+  });
+}
+
+/**
+ * Mail an Owner: Buchung wurde storniert.
+ */
+export async function sendBookingCancelledToOwner(booking: BookingForEmail, venueId: number): Promise<boolean> {
+  const ownerEmail = await getOwnerEmailForVenue(venueId);
+  if (!ownerEmail) return false;
+
+  const venueName = booking.venue_name || 'Ihr Betrieb';
+  const serviceName = booking.service_name || 'Buchung';
+  const subject = `Buchung storniert – ${venueName}`;
+
+  const bodyContent = `
+  <h1 class="email-h1" style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600; color: ${EMAIL_STYLE.text}; letter-spacing: -0.02em;">Buchung storniert</h1>
+  <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.textSoft};">Die folgende Buchung wurde storniert.</p>
+  ${bookingDetailsBlock(booking)}
+  <p style="margin: 0 0 8px 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">Kunde</p>
+  <p style="margin: 0 0 24px 0; font-size: 16px; color: ${EMAIL_STYLE.text};">${(booking.customer_name || '').replace(/</g, '&lt;')}</p>
+  ${notesBlock(booking).html}
+  <p style="margin: 24px 0 0 0; font-size: 14px; color: ${EMAIL_STYLE.muted};">Details im Dashboard.</p>`;
+
+  const html = emailLayout({
+    title: 'Buchung storniert',
+    bodyContent,
+    cta: { text: 'Dashboard öffnen', url: ownerDashboardUrl() },
+    preheader: `Buchung bei ${venueName} wurde storniert.`,
+  });
+
+  const notesT = notesBlock(booking).text;
+  const text = `Buchung storniert – ${venueName}\n\n${serviceName}\n${formatDate(booking.booking_date)} · ${booking.start_time}–${booking.end_time} Uhr\nKunde: ${booking.customer_name}${notesT}\nDashboard: ${ownerDashboardUrl()}\n\nSimplySeat`;
+
+  return sendMail({
+    to: ownerEmail,
+    subject,
+    html,
+    text,
+    bookingId: booking.id,
+    type: 'owner_cancellation',
+  });
+}
+
 /**
  * Erinnerungsmail (zeitgesteuert, z. B. 24 h vor Termin).
  */
@@ -531,7 +627,7 @@ interface SendMailOptions {
   html: string;
   text: string;
   bookingId: number;
-  type: 'confirmation' | 'cancellation' | 'reminder' | 'booking_received' | 'review_invitation';
+  type: 'confirmation' | 'cancellation' | 'reminder' | 'booking_received' | 'review_invitation' | 'owner_new_booking' | 'owner_cancellation';
   onSuccess?: () => Promise<void>;
 }
 

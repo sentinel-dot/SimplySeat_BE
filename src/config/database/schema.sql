@@ -27,9 +27,12 @@ CREATE TABLE venues (
     require_deposit BOOLEAN DEFAULT FALSE,
     deposit_amount DECIMAL(10, 2),
     is_active BOOLEAN DEFAULT TRUE,
+    latitude DECIMAL(10, 7) NULL COMMENT 'Für 30km-Nähe-Filter (Featured)',
+    longitude DECIMAL(10, 7) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_venues_type (type),
+    INDEX idx_venues_lat_lng (latitude, longitude),
     INDEX idx_venues_is_active (is_active),
     INDEX idx_venues_city (city),
     INDEX idx_venues_type_active (type, is_active)
@@ -37,9 +40,11 @@ CREATE TABLE venues (
 
 
 -- Staff members table
+-- user_id: wenn gesetzt, ist dieser Staff der Dashboard-User (Owner/Staff); FK wird nach Erstellung von users gesetzt
 CREATE TABLE staff_members (
     id INT AUTO_INCREMENT PRIMARY KEY,
     venue_id INT NOT NULL,
+    user_id INT NULL COMMENT 'Verknüpfung zum Owner/User (Dashboard-Login); NULL = reiner Mitarbeiter ohne Login',
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255),
     phone VARCHAR(20),
@@ -49,7 +54,8 @@ CREATE TABLE staff_members (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE CASCADE,
     INDEX idx_staff_venue (venue_id),
-    INDEX idx_staff_venue_active (venue_id, is_active)
+    INDEX idx_staff_venue_active (venue_id, is_active),
+    INDEX idx_staff_user (user_id)
 );
 
 -- Services table
@@ -175,6 +181,10 @@ CREATE TABLE users (
     INDEX idx_users_venue (venue_id),
     INDEX idx_users_venue_active (venue_id, is_active)
 );
+
+-- FK staff_members.user_id -> users (nach Erstellung von users)
+ALTER TABLE staff_members
+    ADD CONSTRAINT fk_staff_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
 
 -- Customer preferences
 CREATE TABLE customer_preferences (

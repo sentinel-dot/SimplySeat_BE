@@ -1,7 +1,7 @@
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { getConnection } from '../config/database';
 import { createLogger } from '../config/utils/logger';
+import { assertSecureJwtSecret as checkJwtSecret, WEAK_JWT_SECRETS, hashPassword, verifyPassword } from '../config/utils/auth-utils';
 import { AdminUser, AdminUserPublic, JwtPayload, ApiResponse, LoginResponse } from '../config/utils/types';
 
 const logger = createLogger('auth.service');
@@ -10,25 +10,15 @@ const DEFAULT_JWT_SECRET = 'simplyseat-admin-secret-key-change-in-production';
 const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
-/** Bekannte schwache/Beispiel-Secrets – in Production verboten */
-const WEAK_JWT_SECRETS = new Set([
-    '',
-    'change-me',
-    'change-me-in-production',
-    'secret',
-    'jwt-secret',
-    'your-256-bit-secret',
-    DEFAULT_JWT_SECRET,
-]);
+const ADMIN_WEAK_SECRETS = new Set([...WEAK_JWT_SECRETS, DEFAULT_JWT_SECRET]);
 
 /** Außer in Development muss ein starkes JWT_SECRET gesetzt sein (Production, Staging, etc.). */
 export function assertSecureJwtSecret(): void {
-    if (process.env.NODE_ENV === 'development') return;
-    const secret = process.env.JWT_SECRET?.trim() ?? '';
-    if (!secret || secret.length < 32 || WEAK_JWT_SECRETS.has(secret)) {
-        logger.error('NODE_ENV ist nicht "development". Ein starkes JWT_SECRET (min. 32 Zeichen) ist erforderlich. Setzen Sie JWT_SECRET (z. B. openssl rand -base64 32).');
-        process.exit(1);
-    }
+    checkJwtSecret(
+        process.env.JWT_SECRET?.trim() ?? '',
+        ADMIN_WEAK_SECRETS,
+        'NODE_ENV ist nicht "development". Ein starkes JWT_SECRET (min. 32 Zeichen) ist erforderlich. Setzen Sie JWT_SECRET (z. B. openssl rand -base64 32).'
+    );
 }
 
 /**
@@ -81,25 +71,7 @@ export async function findAdminById(id: number): Promise<AdminUser | null> {
     }
 }
 
-/**
- * Verify password against hash
- */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-    try {
-        return await bcrypt.compare(password, hash);
-    } catch (error) {
-        logger.error('Error verifying password', error);
-        return false;
-    }
-}
-
-/**
- * Hash a password
- */
-export async function hashPassword(password: string): Promise<string> {
-    const saltRounds = 10;
-    return await bcrypt.hash(password, saltRounds);
-}
+export { verifyPassword, hashPassword } from '../config/utils/auth-utils';
 
 /**
  * Generate JWT token

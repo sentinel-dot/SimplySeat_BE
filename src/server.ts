@@ -69,13 +69,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 
-// Rate limiting: allgemein (z. B. 100 Requests / 15 Min pro IP)
+// Rate limiting: allgemein pro IP. Favoriten-Check (ein Request pro Venue-Karte) nicht mitzählen.
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: process.env.NODE_ENV === 'production' ? 100 : 500,
+    max: process.env.NODE_ENV === 'production' ? 400 : 2000,
     message: { success: false, message: 'Zu viele Anfragen. Bitte später erneut versuchen.' },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) =>
+        req.method === 'GET' && /^\/customer\/favorites\/\d+\/check$/.test(req.path),
 });
 app.use(generalLimiter);
 
@@ -224,6 +226,7 @@ const startServer = async() => {
             logger.info('');
             logger.info('   📅 Availability:');
             logger.info('   GET    /availability/slots - Available slots for a day');
+            logger.info('   GET    /availability/range - Available slots for a date range (startDate, endDate)');
             logger.info('   GET    /availability/week - Available slots for a week');
             logger.info('   POST   /availability/check - Check if time slot is available');
             logger.info('   POST   /availability/validate - Validate booking request');

@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import { AvailabilityService } from '../services/availability.service';
 import { createLogger } from '../config/utils/logger';
+import { isValidDate, parsePositiveId } from '../config/utils/helper';
+import { sendError, sendSuccess } from '../config/utils/response';
 import { ApiResponse, DayAvailability, Service } from '../config/utils/types';
 
 
@@ -18,7 +20,7 @@ const logger = createLogger('availability.routes');
  */
 router.get('/slots', async (req, res) =>     
 {
-    const { venueId, serviceId, date, partySize, timeWindowStart, timeWindowEnd, excludeBookingId } = req.query;  
+    const { venueId, serviceId, date, partySize, timeWindowStart, timeWindowEnd, excludeBookingId, staffMemberId } = req.query;  
 
     if (!venueId || !serviceId || !date)
     {
@@ -29,15 +31,25 @@ router.get('/slots', async (req, res) =>
         } as ApiResponse<void>);
     }
 
+    const dateStr = String(date).trim();
+    if (!isValidDate(dateStr)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid date format. Expected YYYY-MM-DD'
+        } as ApiResponse<void>);
+    }
+
     const partySizeNum = partySize != null && partySize !== '' ? parseInt(String(partySize), 10) : undefined;
     const excludeBookingIdNum = excludeBookingId != null && excludeBookingId !== '' ? parseInt(String(excludeBookingId), 10) : undefined;
-    const opts: { partySize?: number; timeWindowStart?: string; timeWindowEnd?: string; excludeBookingId?: number } = {};
+    const staffMemberIdNum = staffMemberId != null && staffMemberId !== '' ? parseInt(String(staffMemberId), 10) : undefined;
+    const opts: { partySize?: number; timeWindowStart?: string; timeWindowEnd?: string; excludeBookingId?: number; staffMemberId?: number } = {};
     if (partySizeNum != null && !isNaN(partySizeNum) && partySizeNum >= 1) opts.partySize = partySizeNum;
     if (timeWindowStart && timeWindowEnd) {
         opts.timeWindowStart = timeWindowStart as string;
         opts.timeWindowEnd = timeWindowEnd as string;
     }
     if (excludeBookingIdNum != null && !isNaN(excludeBookingIdNum)) opts.excludeBookingId = excludeBookingIdNum;
+    if (staffMemberIdNum != null && !isNaN(staffMemberIdNum) && staffMemberIdNum >= 1) opts.staffMemberId = staffMemberIdNum;
     const options = Object.keys(opts).length > 0 ? opts : undefined;
 
     try {
@@ -45,7 +57,7 @@ router.get('/slots', async (req, res) =>
         const dayAvailability = await AvailabilityService.getAvailableSlots(
             Number(venueId),
             Number(serviceId),
-            date as string,
+            dateStr,
             options
         );
 
@@ -58,22 +70,76 @@ router.get('/slots', async (req, res) =>
     catch (error) 
     {
         logger.error('Error fetching slots', error);
-        res.status(500).json({
+        sendError(res, 500, 'Failed to fetch available slots', error);
+    }
+});
+
+/**
+ * GET /availability/range
+ * Hole Verfügbarkeit für einen Datumsbereich in einem Aufruf (weniger Requests als 12× /week).
+ * Query params: venueId, serviceId, startDate(YYYY-MM-DD), endDate(YYYY-MM-DD), optional staffMemberId, partySize
+ */
+router.get('/range', async (req, res) =>
+{
+    const { venueId, serviceId, startDate, endDate, staffMemberId, partySize } = req.query;
+
+    if (!venueId || !serviceId || !startDate || !endDate)
+    {
+        logger.warn('Missing one or more required params: venueId, serviceId, startDate, endDate');
+        return res.status(400).json({
             success: false,
-            message: 'Failed to fetch available slots',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
+            message: 'Missing one or more required params: venueId, serviceId, startDate, endDate'
         } as ApiResponse<void>);
+    }
+
+    const startDateStr = String(startDate).trim();
+    const endDateStr = String(endDate).trim();
+    if (!isValidDate(startDateStr) || !isValidDate(endDateStr))
+    {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid startDate or endDate format. Expected YYYY-MM-DD'
+        } as ApiResponse<void>);
+    }
+
+    const staffMemberIdNum = staffMemberId != null && staffMemberId !== '' ? parseInt(String(staffMemberId), 10) : undefined;
+    const partySizeNum = partySize != null && partySize !== '' ? parseInt(String(partySize), 10) : undefined;
+    const opts: { staffMemberId?: number; partySize?: number } = {};
+    if (staffMemberIdNum != null && !isNaN(staffMemberIdNum) && staffMemberIdNum >= 1) opts.staffMemberId = staffMemberIdNum;
+    if (partySizeNum != null && !isNaN(partySizeNum) && partySizeNum >= 1) opts.partySize = partySizeNum;
+    const options = Object.keys(opts).length > 0 ? opts : undefined;
+
+    try
+    {
+        const rangeAvailability = await AvailabilityService.getAvailabilityRange(
+            Number(venueId),
+            Number(serviceId),
+            startDateStr,
+            endDateStr,
+            options
+        );
+
+        res.json({
+            success: true,
+            message: 'Availability range retrieved successfully',
+            data: rangeAvailability
+        } as ApiResponse<DayAvailability[]>);
+    }
+    catch (error)
+    {
+        logger.error('Error fetching availability range', error);
+        sendError(res, 500, 'Failed to fetch availability range', error);
     }
 });
 
 /**
  * GET /availability/week
  * Hole Verfügbarkeit für eine komplette Woche
- * Query params: venueId, serviceId, startDate(YYYY-MM-DD)
+ * Query params: venueId, serviceId, startDate(YYYY-MM-DD), optional staffMemberId, partySize
  */
 router.get('/week', async (req, res) => 
 {
-    const { venueId, serviceId, startDate } = req.query;  
+    const { venueId, serviceId, startDate, staffMemberId, partySize } = req.query;  
 
     if (!venueId || !serviceId || !startDate)
     {
@@ -84,12 +150,28 @@ router.get('/week', async (req, res) =>
         } as ApiResponse<void>);
     }
 
+    const startDateStr = String(startDate).trim();
+    if (!isValidDate(startDateStr)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid startDate format. Expected YYYY-MM-DD'
+        } as ApiResponse<void>);
+    }
+
+    const staffMemberIdNum = staffMemberId != null && staffMemberId !== '' ? parseInt(String(staffMemberId), 10) : undefined;
+    const partySizeNum = partySize != null && partySize !== '' ? parseInt(String(partySize), 10) : undefined;
+    const opts: { staffMemberId?: number; partySize?: number } = {};
+    if (staffMemberIdNum != null && !isNaN(staffMemberIdNum) && staffMemberIdNum >= 1) opts.staffMemberId = staffMemberIdNum;
+    if (partySizeNum != null && !isNaN(partySizeNum) && partySizeNum >= 1) opts.partySize = partySizeNum;
+    const options = Object.keys(opts).length > 0 ? opts : undefined;
+
     try 
     {
         const weekAvailability = await AvailabilityService.getWeekAvailability(
             Number(venueId),
             Number(serviceId), 
-            startDate as string
+            startDateStr,
+            options
         );
 
         res.json({
@@ -101,11 +183,7 @@ router.get('/week', async (req, res) =>
     catch (error) 
     {
         logger.error('Error fetching week availability', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch week availability',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);      
+        sendError(res, 500, 'Failed to fetch week availability', error);
     }
 });
 
@@ -160,17 +238,13 @@ router.post('/check', async (req, res) =>
     catch (error) 
     {
         logger.error('Error checking slot availability', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to check slot availability',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to check slot availability', error);
     }
 });
 
 /**
  * POST /availability/validate
- * Validiere eine komplette Buchugsanfrage
+ * Validiere eine komplette Buchungsanfrage
  * Body: { 
  *   venueId, 
  *   serviceId, 
@@ -245,11 +319,7 @@ router.post('/validate', async (req, res) =>
     catch (error) 
     {
         logger.error('Error validating booking request', error);
-        res.status(500).json({
-            success: false, 
-            message: 'Failed to validate booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to validate booking', error);
     }
 });
 
@@ -296,11 +366,7 @@ router.get('/service/:serviceId', async (req: Request<{ serviceId: string }>, re
     catch (error) 
     {
         logger.error('Error fetching service details', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch service details',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to fetch service details', error);
     }
 });
 
@@ -330,11 +396,7 @@ router.get('/staff/:staffId/can-perform/:serviceId', async (req, res) =>
     catch (error) 
     {
         logger.error('Error checking staff service availability', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to check staff capability',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to check staff capability', error);
     }
 });
 

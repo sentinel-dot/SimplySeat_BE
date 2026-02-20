@@ -7,6 +7,7 @@ import {
     getPointsConfig
 } from '../services/loyalty.service';
 import { createLogger } from '../config/utils/logger';
+import { sendError } from '../config/utils/response';
 
 const router = Router();
 const logger = createLogger('loyalty.routes');
@@ -33,10 +34,7 @@ router.get('/', async (req: Request, res: Response) => {
         res.json(statsResult);
     } catch (error) {
         logger.error('Error in get loyalty route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -59,10 +57,7 @@ router.get('/balance', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in get balance route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -86,10 +81,7 @@ router.get('/transactions', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in get transactions route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -107,10 +99,7 @@ router.get('/config', async (req: Request, res: Response) => {
         });
     } catch (error) {
         logger.error('Error in get config route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 

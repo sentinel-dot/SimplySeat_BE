@@ -4,7 +4,8 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
-    "build": "tsc && cp src/config/database/schema.sql src/config/database/seed.sql dist/config/database/",
+    "build": "tsc && cp src/config/database/schema.sql dist/config/database/ && cp src/config/database/seed.sql dist/config/database/",
+    "seed:generate": "node scripts/generate-seed.js",
     "start": "node dist/server.js"
   },
   "keywords": [],

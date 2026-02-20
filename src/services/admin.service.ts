@@ -10,6 +10,59 @@ import { hashPassword } from './auth.service';
 import { AdminUserPublic, AdminRole, CustomerPublic } from '../config/utils/types';
 import { Venue } from '../config/utils/types';
 
+const VALID_VENUE_TYPES = ['restaurant', 'hair_salon', 'beauty_salon', 'cafe', 'bar', 'spa', 'other'] as const;
+
+export interface CreateVenueFullPayload {
+    venue: {
+        name: string;
+        type: typeof VALID_VENUE_TYPES[number];
+        email: string;
+        phone?: string;
+        address?: string;
+        city?: string;
+        postal_code?: string;
+        country?: string;
+        description?: string;
+        image_url?: string;
+        website_url?: string;
+        booking_advance_days?: number;
+        booking_advance_hours?: number;
+        cancellation_hours?: number;
+        require_phone?: boolean;
+        require_deposit?: boolean;
+        deposit_amount?: number;
+        is_active?: boolean;
+    };
+    owner: {
+        email: string;
+        password: string;
+        name: string;
+    };
+    /** Indizes der Services (0-basiert), die der Owner durchführt; fehlt oder leer = alle */
+    owner_service_indices?: number[];
+    staff?: Array<{
+        name: string;
+        email?: string;
+        phone?: string;
+        description?: string;
+        /** Indices into services array (0-based) for staff_services link */
+        service_indices?: number[];
+    }>;
+    services?: Array<{
+        name: string;
+        description?: string;
+        duration_minutes: number;
+        price?: number;
+        capacity?: number;
+        requires_staff?: boolean;
+    }>;
+    opening_hours?: Array<{
+        day_of_week: number;
+        start_time: string;
+        end_time: string;
+    }>;
+}
+
 const logger = createLogger('admin.service');
 
 export interface AdminWithVenue extends AdminUserPublic {
@@ -57,6 +110,176 @@ export class AdminService {
 
     static async getVenue(id: number): Promise<Venue | null> {
         return VenueService.getVenueByIdForAdmin(id);
+    }
+
+    /**
+     * Create venue with owner, staff, services and opening hours in one transaction.
+     */
+    static async createVenueFull(payload: CreateVenueFullPayload): Promise<{ venue: Venue; venueId: number }> {
+        const { venue: vData, owner: oData, owner_service_indices: ownerServiceIndices, staff: staffList = [], services: servicesList = [], opening_hours: hoursList = [] } = payload;
+
+        if (!vData?.name || !vData?.type || !vData?.email) {
+            throw new Error('Venue: Name, Typ und E-Mail sind erforderlich');
+        }
+        if (!VALID_VENUE_TYPES.includes(vData.type as typeof VALID_VENUE_TYPES[number])) {
+            throw new Error('Ungültiger Venue-Typ');
+        }
+        if (!oData?.email || !oData?.password || !oData?.name) {
+            throw new Error('Owner: E-Mail, Passwort und Name sind erforderlich');
+        }
+        if (oData.password.length < 8) {
+            throw new Error('Owner-Passwort muss mindestens 8 Zeichen haben');
+        }
+        const validServices = (servicesList ?? []).filter((s) => s.name?.trim() && s.duration_minutes >= 1);
+        if (validServices.length === 0) {
+            throw new Error('Mindestens ein Service mit Name und Dauer ist erforderlich');
+        }
+
+        const conn = await getConnection();
+        try {
+            await conn.beginTransaction();
+
+            const existingUser = await conn.query('SELECT id FROM users WHERE email = ?', [oData.email.trim().toLowerCase()]) as { id: number }[];
+            if (existingUser.length > 0) {
+                throw new Error('Owner-E-Mail wird bereits verwendet');
+            }
+
+            // Jeder Mitarbeiter muss mindestens einem Service zugeordnet sein (Services können standardmäßig vom Owner durchgeführt werden)
+            const servicesCount = servicesList.filter((s) => s.name?.trim() && s.duration_minutes >= 1).length;
+            for (const st of staffList) {
+                if (!st.name?.trim()) continue;
+                const indices = st.service_indices ?? [];
+                const validCount = indices.filter((j) => j >= 0 && j < servicesCount).length;
+                if (servicesCount > 0 && validCount === 0) {
+                    throw new Error('Jeder Mitarbeiter muss mindestens einem Service zugeordnet werden.');
+                }
+            }
+
+            const venueResult = await conn.query(
+                `INSERT INTO venues (
+                    name, type, email, phone, address, city, postal_code, country,
+                    description, image_url, website_url, booking_advance_days, booking_advance_hours, cancellation_hours,
+                    require_phone, require_deposit, deposit_amount, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    vData.name,
+                    vData.type,
+                    vData.email,
+                    vData.phone ?? null,
+                    vData.address ?? null,
+                    vData.city ?? null,
+                    vData.postal_code ?? null,
+                    vData.country ?? 'DE',
+                    vData.description ?? null,
+                    vData.image_url ?? null,
+                    vData.website_url ?? null,
+                    vData.booking_advance_days ?? 30,
+                    vData.booking_advance_hours ?? 48,
+                    vData.cancellation_hours ?? 24,
+                    vData.require_phone ?? false,
+                    vData.require_deposit ?? false,
+                    vData.deposit_amount ?? null,
+                    vData.is_active !== false,
+                ]
+            ) as { insertId: number };
+            const venueId = venueResult.insertId;
+
+            const password_hash = await hashPassword(oData.password);
+            await conn.query(
+                `INSERT INTO users (email, password_hash, name, venue_id, role) VALUES (?, ?, ?, ?, ?)`,
+                [oData.email.trim().toLowerCase(), password_hash, oData.name.trim(), venueId, 'owner']
+            );
+            const ownerRows = await conn.query('SELECT id FROM users WHERE email = ? LIMIT 1', [oData.email.trim().toLowerCase()]) as { id: number }[];
+            const ownerId = ownerRows[0]?.id;
+            if (!ownerId) throw new Error('Owner-User konnte nicht ermittelt werden');
+
+            const serviceIds: number[] = [];
+            for (const s of servicesList) {
+                if (!s.name || s.duration_minutes == null || s.duration_minutes < 1) continue;
+                const r = await conn.query(
+                    `INSERT INTO services (venue_id, name, description, duration_minutes, price, capacity, requires_staff) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        venueId,
+                        s.name,
+                        s.description ?? null,
+                        s.duration_minutes,
+                        s.price ?? null,
+                        s.capacity ?? 1,
+                        s.requires_staff ?? false,
+                    ]
+                ) as { insertId: number };
+                serviceIds.push(r.insertId);
+            }
+
+            const staffIds: number[] = [];
+            for (const st of staffList) {
+                if (!st.name?.trim()) continue;
+                const r = await conn.query(
+                    `INSERT INTO staff_members (venue_id, user_id, name, email, phone, description) VALUES (?, NULL, ?, ?, ?, ?)`,
+                    [venueId, st.name.trim(), st.email?.trim() || null, st.phone?.trim() || null, st.description?.trim() || null]
+                ) as { insertId: number };
+                staffIds.push(r.insertId);
+            }
+
+            for (let i = 0; i < staffList.length; i++) {
+                const indices = staffList[i].service_indices ?? [];
+                for (const j of indices) {
+                    if (j >= 0 && j < serviceIds.length) {
+                        await conn.query(
+                            `INSERT INTO staff_services (staff_member_id, service_id) VALUES (?, ?)`,
+                            [staffIds[i], serviceIds[j]]
+                        );
+                    }
+                }
+            }
+
+            // Owner als Staff: ein Eintrag mit user_id = Owner, konfigurierbar welche Services er durchführt
+            const ownerStaffResult = await conn.query(
+                `INSERT INTO staff_members (venue_id, user_id, name, email, phone, description) VALUES (?, ?, ?, ?, NULL, NULL)`,
+                [venueId, ownerId, oData.name.trim(), oData.email.trim().toLowerCase() || null]
+            ) as { insertId: number };
+            const ownerStaffId = ownerStaffResult.insertId;
+            const indices = ownerServiceIndices != null && ownerServiceIndices.length > 0
+                ? ownerServiceIndices.filter((j) => j >= 0 && j < serviceIds.length)
+                : serviceIds.map((_, i) => i);
+            for (const j of indices) {
+                await conn.query(
+                    `INSERT INTO staff_services (staff_member_id, service_id) VALUES (?, ?)`,
+                    [ownerStaffId, serviceIds[j]]
+                );
+            }
+            for (const oh of hoursList) {
+                const d = Number(oh.day_of_week);
+                if (d < 0 || d > 6 || !oh.start_time || !oh.end_time) continue;
+                await conn.query(
+                    `INSERT INTO availability_rules (venue_id, staff_member_id, day_of_week, start_time, end_time) VALUES (NULL, ?, ?, ?, ?)`,
+                    [ownerStaffId, d, oh.start_time, oh.end_time]
+                );
+            }
+
+            for (const oh of hoursList) {
+                const d = Number(oh.day_of_week);
+                if (d < 0 || d > 6 || !oh.start_time || !oh.end_time) continue;
+                await conn.query(
+                    `INSERT INTO availability_rules (venue_id, staff_member_id, day_of_week, start_time, end_time) VALUES (?, NULL, ?, ?, ?)`,
+                    [venueId, d, oh.start_time, oh.end_time]
+                );
+            }
+
+            await conn.commit();
+
+            const rows = await conn.query(
+                'SELECT id, name, type, email, phone, address, city, postal_code, country, description, image_url, website_url, booking_advance_days, booking_advance_hours, cancellation_hours, require_phone, require_deposit, deposit_amount, is_active, latitude, longitude, created_at, updated_at FROM venues WHERE id = ?',
+                [venueId]
+            ) as Venue[];
+            return { venue: rows[0], venueId };
+        } catch (error) {
+            await conn.rollback();
+            logger.error('Error in createVenueFull', error);
+            throw error;
+        } finally {
+            conn.release();
+        }
     }
 
     static async listAdmins(): Promise<AdminWithVenue[]> {
@@ -123,19 +346,28 @@ export class AdminService {
 
     static async updateAdmin(
         adminId: number,
-        updates: { venue_id?: number | null; role?: AdminRole; is_active?: boolean; name?: string }
+        updates: { venue_id?: number | null; role?: AdminRole; is_active?: boolean; name?: string; email?: string }
     ): Promise<AdminUserPublic> {
         let conn;
         try {
             conn = await getConnection();
             const existing = await conn.query('SELECT id FROM users WHERE id = ?', [adminId]) as { id: number }[];
             if (existing.length === 0) throw new Error('Admin nicht gefunden');
+            if (updates.email !== undefined) {
+                const email = String(updates.email).trim().toLowerCase();
+                if (!email) throw new Error('E-Mail darf nicht leer sein');
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) throw new Error('Ungültige E-Mail-Adresse');
+                const existingEmail = await conn.query('SELECT id FROM users WHERE email = ? AND id != ?', [email, adminId]) as { id: number }[];
+                if (existingEmail.length > 0) throw new Error('Diese E-Mail-Adresse wird bereits verwendet');
+            }
             const fields: string[] = [];
             const values: (string | number | boolean | null)[] = [];
             if (updates.venue_id !== undefined) { fields.push('venue_id = ?'); values.push(updates.venue_id); }
             if (updates.role !== undefined) { fields.push('role = ?'); values.push(updates.role); }
             if (updates.is_active !== undefined) { fields.push('is_active = ?'); values.push(updates.is_active); }
             if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+            if (updates.email !== undefined) { fields.push('email = ?'); values.push(String(updates.email).trim().toLowerCase()); }
             if (fields.length === 0) {
                 const rows = await conn.query('SELECT id, email, name, venue_id, role FROM users WHERE id = ?', [adminId]) as AdminUserPublic[];
                 return rows[0];

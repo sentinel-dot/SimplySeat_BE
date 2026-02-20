@@ -53,8 +53,7 @@ import { randomUUID } from 'crypto';
             conn = await getConnection();
             logger.debug('Database connection established');
             
-            // SCHRITT 1: Validiere die Verfügbarkeit
-            // Bevor wir buchen, müssen wir sicherstellen, dass der Slot verfügbar ist
+            // SCHRITT 1: Validiere die Verfügbarkeit (Format, Venue, Service, Vorlaufzeit, Slot)
             const validation = await AvailabilityService.validateBookingRequest(
                 bookingData.venue_id,
                 bookingData.service_id,
@@ -67,19 +66,37 @@ import { randomUUID } from 'crypto';
                 bypassAdvanceCheck      // Admin kann Vorlaufzeit umgehen
             );
 
-            // Falls nicht verfügbar, wirf einen Fehler
             if (!validation.valid)
             {
                 logger.warn('Booking validation failed');
                 throw new Error(`Booking not available: ${validation.errors?.join(', ')}`);
             }
 
-            // SCHRITT 1.5: Erstelle booking_token
-            const bookingToken = randomUUID();
+            // SCHRITT 2: Transaktion: Re-Check Slot + INSERT (vermeidet Race Condition)
+            let result: { insertId: number };
+            await conn.beginTransaction();
+            try
+            {
+                const recheck = await AvailabilityService.isTimeSlotAvailable(
+                    bookingData.venue_id,
+                    bookingData.service_id,
+                    bookingData.staff_member_id || null,
+                    bookingData.booking_date,
+                    bookingData.start_time,
+                    bookingData.end_time,
+                    bookingData.party_size,
+                    undefined,  // excludeBookingId
+                    conn       // gleiche Connection → konsistenter Stand vor INSERT
+                );
+                if (!recheck.available)
+                {
+                    logger.warn('Slot no longer available (race condition avoided)');
+                    throw new Error(`Booking not available: ${recheck.reason ?? 'Time slot already taken'}`);
+                }
 
+                const bookingToken = randomUUID();
 
-            // SCHRITT 2: Füge die Buchung in die Datenbank ein
-            const result = await conn.query(`
+                result = await conn.query(`
                 INSERT INTO bookings (
                     customer_id,
                     booking_token,
@@ -117,10 +134,16 @@ import { randomUUID } from 'crypto';
                 ]
             ) as { insertId: number };
 
-            logger.info(`Booking created successfully with ID: ${result.insertId}`);
+                await conn.commit();
+                logger.info(`Booking created successfully with ID: ${result.insertId}`);
+            }
+            catch (txError)
+            {
+                await conn.rollback();
+                throw txError;
+            }
 
-
-            // SCHRITT 3: Hole die vollständige Buchung mit der neuen ID
+            // SCHRITT 3: Hole die vollständige Buchung mit der neuen ID (nach Commit sichtbar)
             const newBooking = await this.getBookingById(result.insertId);
 
             if (!newBooking)
@@ -128,12 +151,12 @@ import { randomUUID } from 'crypto';
                 throw new Error('Failed to retrieve newly created booking');
             }
 
-            // E-Mail „Buchung eingegangen“ (Status pending): Vielen Dank – wir prüfen und bestätigen in Kürze
+            // E-Mail „Buchung eingegangen“ (Status pending): an Kunde + Benachrichtigung an Owner
             try {
                 const withDetails = await this.getBookingByIdWithDetails(result.insertId);
                 if (withDetails) {
-                    const { sendBookingReceived } = await import('./email.service');
-                    await sendBookingReceived({
+                    const { sendBookingReceived, sendNewBookingToOwner } = await import('./email.service');
+                    const bookingForEmail = {
                         id: withDetails.id,
                         customer_name: withDetails.customer_name,
                         customer_email: withDetails.customer_email,
@@ -145,7 +168,11 @@ import { randomUUID } from 'crypto';
                         service_name: withDetails.service_name,
                         staff_member_name: withDetails.staff_member_name,
                         booking_token: withDetails.booking_token,
-                    });
+                    };
+                    await sendBookingReceived(bookingForEmail);
+                    if (withDetails.venue_id) {
+                        await sendNewBookingToOwner(bookingForEmail, withDetails.venue_id);
+                    }
                 }
             } catch (emailErr) {
                 logger.error('Email after booking creation failed (booking already created)', emailErr);
@@ -902,12 +929,12 @@ import { randomUUID } from 'crypto';
                 throw new Error('Failed to retrieve cancelled booking');
             }
 
-            // Stornierungsmail an Kunden (gemäß Doku 1.5)
+            // Stornierungsmail an Kunden + Benachrichtigung an Owner
             try {
                 const withDetails = await this.getBookingByIdWithDetails(booking.id);
                 if (withDetails) {
-                    const { sendCancellation } = await import('./email.service');
-                    await sendCancellation({
+                    const { sendCancellation, sendBookingCancelledToOwner } = await import('./email.service');
+                    const bookingForEmail = {
                         id: withDetails.id,
                         customer_name: withDetails.customer_name,
                         customer_email: withDetails.customer_email,
@@ -919,7 +946,11 @@ import { randomUUID } from 'crypto';
                         service_name: withDetails.service_name,
                         staff_member_name: withDetails.staff_member_name,
                         booking_token: withDetails.booking_token,
-                    });
+                    };
+                    await sendCancellation(bookingForEmail);
+                    if (withDetails.venue_id) {
+                        await sendBookingCancelledToOwner(bookingForEmail, withDetails.venue_id);
+                    }
                 }
             } catch (emailErr) {
                 logger.error('Email after cancel failed (booking already cancelled)', emailErr);

@@ -76,15 +76,31 @@ class Logger {
   }
 
   /**
-   * Formatiert Log-Nachricht
+   * Formatiert Log-Nachricht. BigInt-Werte werden für JSON.stringify in Zahlen umgewandelt.
    */
   private formatMessage(level: string, message: string, data?: any): string {
     const timestamp = this.formatTimestamp();
     let formatted = `[${timestamp}] [${this.context}] [${level}] ${message}`;
     if (data) {
-      formatted += `\nData: ${JSON.stringify(data, null, 2)}`;
+      const safe = this.sanitizeForJson(data);
+      formatted += `\nData: ${JSON.stringify(safe, null, 2)}`;
     }
     return formatted;
+  }
+
+  /** Convert BigInt to number so JSON.stringify does not throw. */
+  private sanitizeForJson(obj: unknown): unknown {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === 'bigint') return Number(obj);
+    if (Array.isArray(obj)) return obj.map((item) => this.sanitizeForJson(item));
+    if (typeof obj === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        out[k] = this.sanitizeForJson(v);
+      }
+      return out;
+    }
+    return obj;
   }
 
   /**
@@ -159,6 +175,3 @@ class Logger {
 export function createLogger(context: string): Logger {
   return new Logger(context);
 }
-
-// Default Logger Export
-export default new Logger('App');

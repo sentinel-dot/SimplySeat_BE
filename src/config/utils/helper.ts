@@ -1,6 +1,56 @@
 // config/utils/helper.ts
 
 /**
+ * Recursively convert BigInt values to number so objects can be JSON-serialized.
+ * MySQL returns BIGINT/COUNT etc. as BigInt, and JSON.stringify does not support BigInt.
+ */
+export function sanitizeForJson<T>(obj: T): T {
+    if (obj === null || obj === undefined) {
+        return obj;
+    }
+    if (typeof obj === 'bigint') {
+        return Number(obj) as T;
+    }
+    if (Array.isArray(obj)) {
+        return obj.map((item) => sanitizeForJson(item)) as T;
+    }
+    if (typeof obj === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+            out[k] = sanitizeForJson(v);
+        }
+        return out as T;
+    }
+    return obj;
+}
+
+/** Date format YYYY-MM-DD for API (e.g. booking_date, startDate). */
+export const DATE_FORMAT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isValidDate(dateStr: string | undefined): boolean {
+    if (!dateStr || typeof dateStr !== 'string') return false;
+    return DATE_FORMAT_REGEX.test(dateStr.trim());
+}
+
+/** Simple email format check. */
+export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(str: string | undefined): boolean {
+    if (!str || typeof str !== 'string') return false;
+    return EMAIL_REGEX.test(str.trim());
+}
+
+/**
+ * Parse route param as positive integer ID. Returns null if invalid or <= 0.
+ */
+export function parsePositiveId(value: string | undefined): number | null {
+    if (value == null || value === '') return null;
+    const n = parseInt(String(value).trim(), 10);
+    if (Number.isNaN(n) || n < 1) return null;
+    return n;
+}
+
+/**
  * Validiert ob ein String ein gültiges UUID v4 Format hat
  * 
  * @param token - Der zu validierende Token-String
@@ -32,4 +82,17 @@ export function validateBookingToken(token: string | undefined): boolean
 export function getTokenPrefix(token: string): string 
 {
     return token.substring(0, 8) + '...';
+}
+
+/**
+ * Round average rating from DB (number or string) to one decimal. Returns null if invalid.
+ */
+export function roundAverageRating(avg: unknown): number | null {
+    if (avg == null) return null;
+    if (typeof avg === 'number' && !Number.isNaN(avg)) return Math.round(avg * 10) / 10;
+    if (typeof avg === 'string') {
+        const n = parseFloat(avg);
+        if (!Number.isNaN(n)) return Math.round(n * 10) / 10;
+    }
+    return null;
 }

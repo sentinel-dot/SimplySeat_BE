@@ -1,8 +1,9 @@
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { getConnection } from '../config/database';
 import { createLogger } from '../config/utils/logger';
+import { assertSecureJwtSecret as checkJwtSecret, WEAK_JWT_SECRETS, hashPassword, verifyPassword } from '../config/utils/auth-utils';
+import { isValidEmail } from '../config/utils/helper';
 import { 
     Customer, 
     CustomerPublic, 
@@ -18,25 +19,15 @@ const DEFAULT_JWT_SECRET = 'simplyseat-customer-secret-key-change-in-production'
 const JWT_SECRET = process.env.CUSTOMER_JWT_SECRET || process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.CUSTOMER_JWT_EXPIRES_IN || '7d';
 
-/** Bekannte schwache/Beispiel-Secrets – in Production verboten */
-const WEAK_JWT_SECRETS = new Set([
-    '',
-    'change-me',
-    'change-me-in-production',
-    'secret',
-    'jwt-secret',
-    'your-256-bit-secret',
-    DEFAULT_JWT_SECRET,
-]);
+const CUSTOMER_WEAK_SECRETS = new Set([...WEAK_JWT_SECRETS, DEFAULT_JWT_SECRET]);
 
 /** Außer in Development muss ein starkes JWT_SECRET gesetzt sein (Production, Staging, etc.). */
 export function assertSecureJwtSecret(): void {
-    if (process.env.NODE_ENV === 'development') return;
-    const secret = process.env.CUSTOMER_JWT_SECRET?.trim() ?? process.env.JWT_SECRET?.trim() ?? '';
-    if (!secret || secret.length < 32 || WEAK_JWT_SECRETS.has(secret)) {
-        logger.error('NODE_ENV ist nicht "development". Ein starkes CUSTOMER_JWT_SECRET (min. 32 Zeichen) ist erforderlich.');
-        process.exit(1);
-    }
+    checkJwtSecret(
+        process.env.CUSTOMER_JWT_SECRET?.trim() ?? process.env.JWT_SECRET?.trim() ?? '',
+        CUSTOMER_WEAK_SECRETS,
+        'NODE_ENV ist nicht "development". Ein starkes CUSTOMER_JWT_SECRET (min. 32 Zeichen) ist erforderlich.'
+    );
 }
 
 /**
@@ -114,25 +105,7 @@ export async function findCustomerByVerificationToken(token: string): Promise<Cu
     }
 }
 
-/**
- * Verify password against hash
- */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-    try {
-        return await bcrypt.compare(password, hash);
-    } catch (error) {
-        logger.error('Error verifying password', error);
-        return false;
-    }
-}
-
-/**
- * Hash a password
- */
-export async function hashPassword(password: string): Promise<string> {
-    const saltRounds = 10;
-    return await bcrypt.hash(password, saltRounds);
-}
+export { verifyPassword, hashPassword } from '../config/utils/auth-utils';
 
 /**
  * Generate JWT token for customer
@@ -203,8 +176,7 @@ export function toPublicCustomer(customer: Customer): CustomerPublic {
 export async function register(data: CustomerRegisterRequest): Promise<ApiResponse<CustomerLoginResponse>> {
     try {
         // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(data.email)) {
+        if (!isValidEmail(data.email)) {
             return { success: false, message: 'Ungültige E-Mail-Adresse' };
         }
 

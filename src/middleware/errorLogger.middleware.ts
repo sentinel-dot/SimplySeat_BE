@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../config/utils/logger';
+import { sendError } from '../config/utils/response';
 
 const logger = createLogger('backend.server.error');
 
@@ -9,9 +10,5 @@ export function errorLogger(err: Error, req: Request, res: Response, _next: Next
         stack: err.stack,
     });
 
-    res.status(500).json({
-        success: false,
-        message: 'Internal Server Error',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined,
-    });
+    sendError(res, 500, 'Internal Server Error', err);
 }

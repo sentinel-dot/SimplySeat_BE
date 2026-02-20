@@ -200,6 +200,10 @@ export class OwnerService {
                         await sendConfirmation(bookingForEmail, currentStatus === 'cancelled');
                     } else if (status === 'cancelled') {
                         await sendCancellation(bookingForEmail);
+                        const { sendBookingCancelledToOwner } = await import('./email.service');
+                        if (forEmail.venue_id) {
+                            await sendBookingCancelledToOwner(bookingForEmail, forEmail.venue_id);
+                        }
                     } else if (status === 'completed') {
                         const { sendReviewInvitation } = await import('./email.service');
                         await sendReviewInvitation(bookingForEmail, forEmail.venue_id);
@@ -384,12 +388,13 @@ export class OwnerService {
         }
     }
 
-    static async updateVenueSettings(venueId: number, updates: { booking_advance_hours?: number; cancellation_hours?: number; image_url?: string | null }): Promise<void> {
+    static async updateVenueSettings(venueId: number, updates: { booking_advance_days?: number; booking_advance_hours?: number; cancellation_hours?: number; image_url?: string | null }): Promise<void> {
         let conn;
         try {
             conn = await getConnection();
             const updateFields: string[] = [];
             const params: (number | string | null)[] = [];
+            if (updates.booking_advance_days !== undefined) { updateFields.push('booking_advance_days = ?'); params.push(updates.booking_advance_days); }
             if (updates.booking_advance_hours !== undefined) { updateFields.push('booking_advance_hours = ?'); params.push(updates.booking_advance_hours); }
             if (updates.cancellation_hours !== undefined) { updateFields.push('cancellation_hours = ?'); params.push(updates.cancellation_hours); }
             if (updates.image_url !== undefined) { updateFields.push('image_url = ?'); params.push(updates.image_url); }

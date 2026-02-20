@@ -20,6 +20,8 @@ export interface Service {
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
+  /** Nur bei getVenueById: Mitarbeiter, die diesen Service anbieten (für Schritt „Mitarbeiter wählen“) */
+  available_staff?: { id: number; name: string }[];
 }
 
 
@@ -27,6 +29,8 @@ export interface Service {
 export interface StaffMember {
   id: number;
   venue_id: number;
+  /** Wenn gesetzt: dieser Staff-Eintrag gehört zum Dashboard-User (Owner/Staff) */
+  user_id?: number | null;
   name: string;
   email?: string;
   phone?: string;
@@ -58,6 +62,8 @@ export interface Venue {
     require_deposit: boolean;
     deposit_amount?: number;
     is_active: boolean;
+    latitude?: number | null;
+    longitude?: number | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -89,6 +95,12 @@ export interface DayAvailability {
   date: string;
   day_of_week: number;
   time_slots: TimeSlot[];
+  /** true wenn an dem Tag keine Öffnungszeiten (geschlossen), sonst ausgebucht wenn keine Slots */
+  is_closed?: boolean;
+  /** true wenn der Tag geöffnet wäre, aber wegen Mindestvorlaufzeit (booking_advance_hours) keine Slots angeboten werden */
+  within_advance_hours?: boolean;
+  /** Mindestvorlaufzeit in Stunden (z. B. 48), nur gesetzt wenn within_advance_hours true */
+  booking_advance_hours?: number;
 }
 
 

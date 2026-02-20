@@ -27,7 +27,8 @@ import {
     UpdateBookingData,
     ApiResponse
 } from '../config/utils/types';
-import { getTokenPrefix, validateBookingToken } from '../config/utils/helper';
+import { getTokenPrefix, isValidDate, isValidEmail, parsePositiveId, validateBookingToken } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
 import { authenticateToken, requireRole } from '../middleware/auth.middleware';
 import { optionalCustomerAuth } from '../middleware/customer-auth.middleware';
 
@@ -135,11 +136,8 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response) =>
         } as ApiResponse<void>);
     }
 
-    // SCHRITT 3: DATUMS-FORMAT VALIDIERUNG
-    // Erwartetes Format: YYYY-MM-DD (z.B. 2025-10-25)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(bookingData.booking_date))
-    {
+    // SCHRITT 3: DATUMS-FORMAT VALIDIERUNG (YYYY-MM-DD)
+    if (!isValidDate(bookingData.booking_date)) {
         logger.warn('Invalid date format', { date: bookingData.booking_date });
         return res.status(400).json({
             success: false,
@@ -231,13 +229,7 @@ router.post('/', optionalCustomerAuth, async (req: Request, res: Response) =>
         }
 
 
-        // ALLGEMEINER SERVERFEHLER
-        // 500 Internal Server Error = Etwas ist auf dem Server schiefgelaufen
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to create booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        return sendError(res, 500, 'Failed to create booking', error);
     }
 });
 
@@ -249,9 +241,7 @@ router.get('/customer/:email', optionalCustomerAuth, async (req: Request<{ email
 {
     const customerEmail = req.params.email;
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailRegex.test(customerEmail))
+    if (!isValidEmail(customerEmail))
     {
         logger.warn('Invalid email format', { email: customerEmail });
         return res.status(400).json({
@@ -285,12 +275,7 @@ router.get('/customer/:email', optionalCustomerAuth, async (req: Request<{ email
     catch (error) 
     {
         logger.error('Error fetching customer bookings', error);
-
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch bookings',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to fetch bookings', error);
     }
 });
 
@@ -339,12 +324,7 @@ router.get('/manage/:token', async (req: Request<{ token: string }>, res: Respon
     catch (error) 
     {
         logger.error('Error fetching booking by token', error);
-
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to fetch booking', error);
     }
 });
 
@@ -357,9 +337,8 @@ router.get('/manage/:token', async (req: Request<{ token: string }>, res: Respon
  */
 router.get('/:id', authenticateToken, async (req: Request<{ id: string }>, res: Response) => 
 {
-    const bookingId = parseInt(req.params.id);
-    if (isNaN(bookingId) || bookingId <= 0)
-    {
+    const bookingId = parsePositiveId(req.params.id);
+    if (bookingId === null) {
         logger.warn('Invalid booking ID', { provided: req.params.id });
         return res.status(400).json({
             success: false,
@@ -395,11 +374,7 @@ router.get('/:id', authenticateToken, async (req: Request<{ id: string }>, res: 
     catch (error) 
     {
         logger.error('Error fetching booking', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to fetch booking', error);
     }
 });
 
@@ -611,12 +586,7 @@ router.patch('/manage/:token', async (req: Request<{ token: string }>, res: Resp
             } as ApiResponse<void>);
         }
 
-        // ERROR 5: ALLGEMEINER SERVERFEHLER
-        res.status(500).json({
-            success: false,
-            message: 'Failed to update booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to update booking', error);
     }
 });
 
@@ -654,9 +624,8 @@ router.patch('/manage/:token', async (req: Request<{ token: string }>, res: Resp
  */
 router.post('/:id/confirm', authenticateToken, requireRole('owner', 'admin', 'staff'), async (req: Request<{ id: string }>, res: Response) => 
 {
-    const bookingId = parseInt(req.params.id);
-    if (isNaN(bookingId) || bookingId <= 0)
-    {
+    const bookingId = parsePositiveId(req.params.id);
+    if (bookingId === null) {
         logger.warn('Invalid booking ID', { provided: req.params.id });
         return res.status(400).json({
             success: false,
@@ -702,11 +671,7 @@ router.post('/:id/confirm', authenticateToken, requireRole('owner', 'admin', 'st
                 error: process.env.NODE_ENV === 'development' ? String(error) : undefined
             } as ApiResponse<void>);
         }
-        res.status(500).json({
-            success: false,
-            message: 'Failed to confirm booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to confirm booking', error);
     }
 });
 
@@ -927,9 +892,8 @@ router.delete('/:id', authenticateToken, requireRole('owner', 'admin'), async (r
 {
     logger.warn('⚠️ HARD DELETE operation requested');
 
-    const bookingId = parseInt(req.params.id);
-    if (isNaN(bookingId) || bookingId <= 0)
-    {
+    const bookingId = parsePositiveId(req.params.id);
+    if (bookingId === null) {
         logger.warn('Invalid booking ID', { provided: req.params.id });
         return res.status(400).json({
             success: false,
@@ -981,11 +945,7 @@ router.delete('/:id', authenticateToken, requireRole('owner', 'admin'), async (r
             } as ApiResponse<void>);
         }
 
-        res.status(500).json({
-            success: false,
-            message: 'Failed to delete booking',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        sendError(res, 500, 'Failed to delete booking', error);
     }
 });
 

@@ -4,6 +4,8 @@ import { VenueService } from '../services/venue.service';
 import { Venue, VenueWithStaff, ApiResponse, Booking } from '../config/utils/types';
 import { BookingService } from '../services/booking.service';
 import { authenticateToken, requireVenueAccess } from '../middleware/auth.middleware';
+import { parsePositiveId } from '../config/utils/helper';
+import { sendError } from '../config/utils/response';
 
 const router = express.Router();
 const logger = createLogger('venue.routes');
@@ -50,6 +52,7 @@ router.get('/', async (req, res) =>
     const location = (req.query.location as string | undefined)?.trim() || undefined;
     const sortParam = req.query.sort as string | undefined;
     const sort = sortParam === 'distance' ? 'distance' : 'name';
+    const q = (req.query.q as string | undefined)?.trim() || undefined;
 
     const opts: Parameters<typeof VenueService.getAllVenues>[0] = {};
     if (type) opts.type = type;
@@ -61,6 +64,7 @@ router.get('/', async (req, res) =>
     }
     if (location) opts.location = location;
     if (sort) opts.sort = sort;
+    if (q) opts.q = q;
     const hasFilters = Object.keys(opts).length > 0;
 
     try 
@@ -71,15 +75,30 @@ router.get('/', async (req, res) =>
             success: true,
             message: `${venues.length} venue${venues.length !== 1 ? 's' : ''} found`,
             data: venues
-        } as ApiResponse<Venue[]>);
+        } as ApiResponse<(Venue & { averageRating: number | null; reviewCount: number })[]>);
     } 
     catch (error) 
     {     
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to retrieve venues',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        return sendError(res, 500, 'Failed to retrieve venues', error);
+    }
+});
+
+/**
+ * GET /venues/featured
+ * Top-Venues nach Beliebtheit. Mit Standort nur Venues in 30 km: ?location=Ort/PLZ oder ?lat=…&lng=… (Browser-Standort).
+ */
+router.get('/featured', async (req, res) => {
+    const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit || 8), 10) || 8));
+    const location = (req.query.location as string | undefined)?.trim() || undefined;
+    const latParam = req.query.lat as string | undefined;
+    const lngParam = req.query.lng as string | undefined;
+    const lat = latParam != null && latParam !== '' ? parseFloat(latParam) : undefined;
+    const lng = lngParam != null && lngParam !== '' ? parseFloat(lngParam) : undefined;
+    try {
+        const venues = await VenueService.getFeaturedVenues(limit, 2, location, lat, lng);
+        res.json({ success: true, data: venues });
+    } catch (error) {
+        return sendError(res, 500, 'Failed to retrieve featured venues', error);
     }
 });
 
@@ -90,13 +109,9 @@ router.get('/', async (req, res) =>
 router.get('/stats', async (req, res) => {
     try {
         const stats = await VenueService.getPublicStats();
-        res.json({ success: true, data: stats } as ApiResponse<{ venueCount: number; bookingCountThisMonth: number }>);
+        res.json({ success: true, data: stats });
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to retrieve stats',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        return sendError(res, 500, 'Failed to retrieve stats', error);
     }
 });
 
@@ -106,10 +121,8 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/:id', async (req, res) => 
 {
-    const id = parseInt(req.params.id);
-
-    if (isNaN(id) || id <= 0)
-    {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
         logger.warn('Invalid venue ID provided', { provided_id: req.params.id });
         return res.status(400).json({
             success: false,
@@ -138,11 +151,7 @@ router.get('/:id', async (req, res) =>
     catch (error) 
     {
         logger.error('Failed to retrieve venue details', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to retrieve venue',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        return sendError(res, 500, 'Failed to retrieve venue', error);
     }
 });
 
@@ -181,22 +190,16 @@ router.get('/:id', async (req, res) =>
  */
 router.get('/:venueId/bookings', authenticateToken, requireVenueAccess, async (req: Request<{ venueId: string }>, res: Response) => 
 {
-    const venueId = parseInt(req.params.venueId);
-
-    // Query-Parameter extrahieren (alle sind optional)
-    // req.query enthält alle ?key=value Parameter aus der URL
-    const { date, status, startDate, endDate } = req.query;
-
-
-    // VENUE ID VALIDIERUNG
-    if (isNaN(venueId) || venueId <= 0)
-    {
+    const venueId = parsePositiveId(req.params.venueId);
+    if (venueId === null) {
         logger.warn('Invalid venue ID', { provided: req.params.venueId });
         return res.status(400).json({
             success: false,
             message: 'Invalid venue Id'
         } as ApiResponse<void>);
     }
+
+    const { date, status, startDate, endDate } = req.query;
 
     try 
     {
@@ -238,11 +241,7 @@ router.get('/:venueId/bookings', authenticateToken, requireVenueAccess, async (r
     catch (error) 
     {
         logger.error('Error fetching venue bookings', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to fetch bookings',
-            error: process.env.NODE_ENV === 'development' ? String(error) : undefined
-        } as ApiResponse<void>);
+        return sendError(res, 500, 'Failed to fetch bookings', error);
     }
 });
 

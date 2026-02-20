@@ -7,11 +7,11 @@ import {
     resetPassword,
     changePassword,
     linkAllBookingsByEmail,
-    findCustomerById,
-    toPublicCustomer
+    findCustomerById
 } from '../services/customer-auth.service';
 import { requireCustomerAuth } from '../middleware/customer-auth.middleware';
 import { createLogger } from '../config/utils/logger';
+import { sendError } from '../config/utils/response';
 
 const router = Router();
 const logger = createLogger('customer-auth.routes');
@@ -62,10 +62,7 @@ router.post('/register', async (req: Request, res: Response) => {
         res.status(201).json(result);
     } catch (error) {
         logger.error('Error in register route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -105,10 +102,7 @@ router.post('/login', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in login route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -144,10 +138,7 @@ router.get('/me', requireCustomerAuth, async (req: Request, res: Response) => {
         });
     } catch (error) {
         logger.error('Error in me route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -172,10 +163,7 @@ router.post('/verify-email', async (req: Request, res: Response) => {
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in verify-email route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -236,10 +224,7 @@ router.post('/resend-verification', requireCustomerAuth, async (req: Request, re
         );
 
         if (!emailSent) {
-            res.status(500).json({
-                success: false,
-                message: 'Fehler beim Versenden der E-Mail'
-            });
+            sendError(res, 500, 'Fehler beim Versenden der E-Mail');
             return;
         }
 
@@ -249,10 +234,7 @@ router.post('/resend-verification', requireCustomerAuth, async (req: Request, re
         });
     } catch (error) {
         logger.error('Error in resend-verification route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -277,10 +259,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
         res.json(result);
     } catch (error) {
         logger.error('Error in forgot-password route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -305,10 +284,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in reset-password route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 
@@ -345,10 +321,7 @@ router.post('/change-password', requireCustomerAuth, async (req: Request, res: R
         res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
         logger.error('Error in change-password route', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ein Fehler ist aufgetreten'
-        });
+        sendError(res, 500, 'Ein Fehler ist aufgetreten', error);
     }
 });
 

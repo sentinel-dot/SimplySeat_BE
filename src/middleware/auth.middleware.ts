@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, findAdminById, toPublicUser } from '../services/auth.service';
+import { sendError } from '../config/utils/response';
 import { createLogger } from '../config/utils/logger';
 import { JwtPayload, AdminUserPublic, AdminRole } from '../config/utils/types';
 
@@ -92,10 +93,7 @@ export async function authenticateAndLoadUser(req: Request, res: Response, next:
         next();
     } catch (error) {
         logger.error('Error loading user in middleware', error);
-        res.status(500).json({
-            success: false,
-            message: 'Interner Serverfehler'
-        });
+        sendError(res, 500, 'Interner Serverfehler', error);
     }
 }
 
