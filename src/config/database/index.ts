@@ -152,15 +152,12 @@ export async function ensureSchemaAndSeedIfEmpty(): Promise<void> {
     let conn: PoolConnection | null = null;
     try {
         conn = await pool.getConnection();
-        /*
-            const empty = await isDatabaseEmpty(conn);
-            if (!empty) {
-                logger.info('Database already has schema; skipping schema/seed');
-                return;
-            }
-            logger.info('Database is empty; applying schema and seed...');
-        */
-       logger.info('Applying schema and seed...');
+        const empty = await isDatabaseEmpty(conn);
+        if (!empty) {
+            logger.info('Database already has schema; skipping schema/seed');
+            return;
+        }
+        logger.info('Database is empty; applying schema and seed...');
         await runSchema(conn);
         await runSeed(conn);
     } catch (error) {
