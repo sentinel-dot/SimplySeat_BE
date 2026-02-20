@@ -144,19 +144,23 @@ export async function runSeed(conn: PoolConnection): Promise<void> {
 }
 
 /**
- * Wenn die DB leer ist (keine venues-Tabelle), Schema und Seed ausführen.
+ * #Wenn die DB leer ist (keine venues-Tabelle), Schema und Seed ausführen.
+ * Schema und Seed bei jedem Start ausführen.
  * Sollte nach testConnection() beim Start aufgerufen werden.
  */
 export async function ensureSchemaAndSeedIfEmpty(): Promise<void> {
     let conn: PoolConnection | null = null;
     try {
         conn = await pool.getConnection();
-        const empty = await isDatabaseEmpty(conn);
-        if (!empty) {
-            logger.info('Database already has schema; skipping schema/seed');
-            return;
-        }
-        logger.info('Database is empty; applying schema and seed...');
+        /*
+            const empty = await isDatabaseEmpty(conn);
+            if (!empty) {
+                logger.info('Database already has schema; skipping schema/seed');
+                return;
+            }
+            logger.info('Database is empty; applying schema and seed...');
+        */
+       logger.info('Applying schema and seed...');
         await runSchema(conn);
         await runSeed(conn);
     } catch (error) {
